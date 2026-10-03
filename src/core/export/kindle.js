@@ -3,17 +3,17 @@ const fs=require('fs/promises'),path=require('path'),os=require('os');
 const {execFile}=require('child_process');
 const {promisify}=require('util');
 const run=promisify(execFile);
-async function findConverter() {
-  const exe=process.platform==='win32'?'ebook-convert.exe':'ebook-convert';
-  const root=path.resolve(__dirname,'../../..');
-  const candidates=[process.env.PDFMAKER_CALIBRE,
+async function findConverter({platform=process.platform,env=process.env,resourcesPath=process.resourcesPath,
+  root=path.resolve(__dirname,'../../..'),home=os.homedir()}={}) {
+  const exe=platform==='win32'?'ebook-convert.exe':'ebook-convert';
+  const candidates=[env.PDFMAKER_CALIBRE,
+    resourcesPath && path.join(resourcesPath,'calibre',exe),
     path.join(root,'tools/calibre',exe),
-    process.resourcesPath && path.join(process.resourcesPath,'calibre',exe),
-    path.join(os.homedir(),'.pdfmaker/Calibre Portable/Calibre',exe),
-    ...['ProgramFiles','ProgramFiles(x86)'].filter(k=>process.env[k]).map(k=>path.join(process.env[k],'Calibre2',exe)),
-    ...(process.env.PATH || '').split(path.delimiter).filter(Boolean).map(dir=>path.join(dir.replace(/^"|"$/g,''),exe)),
-    ...(process.platform==='darwin'?['/Applications/calibre.app/Contents/MacOS/ebook-convert']:[]),
-    ...(process.platform==='linux'?['/opt/calibre/ebook-convert']:[])];
+    path.join(home,'.pdfmaker/Calibre Portable/Calibre',exe),
+    ...['ProgramFiles','ProgramFiles(x86)'].filter(k=>env[k]).map(k=>path.join(env[k],'Calibre2',exe)),
+    ...(env.PATH || '').split(path.delimiter).filter(Boolean).map(dir=>path.join(dir.replace(/^"|"$/g,''),exe)),
+    ...(platform==='darwin'?['/Applications/calibre.app/Contents/MacOS/ebook-convert']:[]),
+    ...(platform==='linux'?['/opt/calibre/ebook-convert']:[])];
   for(const file of candidates.filter(Boolean)) try{if((await fs.stat(file)).isFile()) return path.resolve(file);}catch{}
   return null;
 }

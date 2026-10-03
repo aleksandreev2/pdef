@@ -1,0 +1,20 @@
+PDFMaker Mobile includes independently licensed third-party software.
+
+Calibre 9.15.0, copyright Kovid Goyal and contributors.
+Unmodified official Windows runtime, used as a separate local converter.
+License: GNU General Public License version 3.
+The license and corresponding Calibre source archive are installed in
+resources/licenses/Calibre-GPL.txt and resources/licenses/calibre-9.15.0.tar.xz.
+Project: https://calibre-ebook.com/
+Official release: https://download.calibre-ebook.com/9.15.0/
+Calibre also includes its own third-party libraries and notices in resources/calibre.
+
+PT Serif and PT Sans, copyright 2010 ParaType Ltd.
+License: SIL Open Font License 1.1.
+Full notices: resources/licenses/OFL-PTSerif.txt and OFL-PTSans.txt.
+
+Electron includes its license and Chromium third-party notices alongside the
+application executable (LICENSE.electron.txt and LICENSES.chromium.html).
+JavaScript library licenses are retained with their packages in resources/app.asar.
+
+PDFMaker Mobile source: https://github.com/aleksandreev2/pdef

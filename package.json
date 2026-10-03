@@ -1,7 +1,7 @@
 {
   "name": "pdfmaker-mobile",
   "productName": "PDFMaker Mobile",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "Сборка PDF, EPUB, FB2, MOBI, AZW3 и TXT из отдельных глав",
   "main": "src/main/main.js",
   "author": "Дом Некроманта",
@@ -12,7 +12,7 @@
     "dev": "electron . --dev",
     "fonts": "node scripts/fetch-fonts.mjs",
     "kindle-tools": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-kindle.ps1",
-    "dist": "electron-builder --win --x64",
+    "dist": "node scripts/build-windows.js",
     "pack": "node scripts/pack.js"
   },
   "dependencies": {
@@ -29,18 +29,39 @@
     "xmllint-wasm": "5.3.0"
   },
   "devDependencies": {
-    "electron": "^33.4.11",
-    "electron-builder": "^25.1.8"
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8"
   },
   "build": {
     "appId": "ru.domnekromanta.pdfmaker",
+    "asar": true,
+    "asarUnpack": ["node_modules/@resvg/**/*", "node_modules/xmllint-wasm/**/*"],
     "files": [
       "src/**/*",
       "assets/**/*",
       "package.json"
     ],
+    "extraResources": [
+      { "from": "tools/calibre", "to": "calibre" },
+      { "from": "tools/licenses", "to": "licenses" },
+      { "from": "build/THIRD-PARTY-NOTICES.txt", "to": "licenses/THIRD-PARTY-NOTICES.txt" }
+    ],
     "win": {
-      "target": "nsis"
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.ico",
+      "artifactName": "PDFMaker-Mobile-${version}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "PDFMaker Mobile",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "installerLanguages": ["ru_RU"],
+      "language": "1049"
     }
   },
   "allowScripts": {

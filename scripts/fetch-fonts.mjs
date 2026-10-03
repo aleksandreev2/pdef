@@ -26,6 +26,8 @@ const FILES = [
   ['ptsans/PT_Sans-Web-Bold.ttf', 'PTSans-Bold.ttf'],
   ['ptsans/PT_Sans-Web-Italic.ttf', 'PTSans-Italic.ttf'],
   ['ptsans/PT_Sans-Web-BoldItalic.ttf', 'PTSans-BoldItalic.ttf'],
+  ['ptserif/OFL.txt', 'OFL-PTSerif.txt'],
+  ['ptsans/OFL.txt', 'OFL-PTSans.txt'],
 ];
 
 await fs.mkdir(outDir, { recursive: true });
@@ -47,7 +49,7 @@ for (const [remote, local] of FILES) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length < 10000) throw new Error('файл подозрительно мал');
+    if (buf.length < (local.endsWith('.ttf') ? 10000 : 1000)) throw new Error('файл подозрительно мал');
     await fs.writeFile(target, buf);
     console.log(`загружено: ${local} (${(buf.length / 1024).toFixed(0)} КБ)`);
     ok += 1;
@@ -59,4 +61,5 @@ for (const [remote, local] of FILES) {
 console.log(`\nГотово: ${ok} из ${FILES.length}. Папка: ${outDir}`);
 if (ok < FILES.length) {
   console.log('Недостающие начертания можно положить вручную — имена выше.');
+  process.exitCode = 1;
 }

@@ -10,12 +10,21 @@ const { svgTitleMark, svgSceneBreak, svgFolio } = require('../core/signature');
 const { availableFamilies, resolveFonts } = require('../core/fonts');
 const { createOutputPreferences } = require('./output-preferences');
 
+// Optional release verification uses a separate profile and never touches user books/settings.
+const checkIndex = process.argv.indexOf('--installation-check');
+const checkDir = checkIndex >= 0 ? process.argv[checkIndex + 1] : null;
+if (checkIndex >= 0) {
+  if (!checkDir || !path.isAbsolute(checkDir)) throw new Error('Для проверки установки нужна абсолютная папка отчёта.');
+  require('fs').mkdirSync(path.join(checkDir, 'profile'), {recursive: true});
+  app.setPath('userData', path.join(checkDir, 'profile'));
+}
 const outputPreferences = () => createOutputPreferences(path.join(app.getPath('userData'), 'preferences.json'));
 
 let mainWindow = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
+    show: !checkDir,
     width: 1280,
     height: 880,
     minWidth: 1020,
@@ -159,6 +168,18 @@ app.whenReady().then(() => {
     ]),
   );
   createWindow();
+
+  if (checkDir) {
+    require('./installation-check').runInstallationCheck(mainWindow, checkDir)
+      .then(() => app.exit(0))
+      .catch(async error => {
+        const fs = require('fs/promises');
+        await fs.mkdir(checkDir, {recursive: true});
+        await fs.writeFile(path.join(checkDir, 'failure.txt'), String(error.stack || error));
+        app.exit(1);
+      });
+    return;
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
