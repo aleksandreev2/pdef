@@ -2,6 +2,13 @@
 
 const { chapterLabel, chapterKicker } = require('../model');
 const { svgTitleMark, svgSceneBreak } = require('../signature');
+const {
+  PDEF_NAME,
+  PDEF_URL,
+  DEVELOPER_NAME,
+  DEVELOPER_URL,
+  DEVELOPER_TEAM,
+} = require('../credits');
 
 /** Экранирование текста для XML. */
 function esc(s) {
@@ -269,6 +276,18 @@ img {
   color: #6b6872;
 }
 .about .url { font-size: 0.82em; word-break: break-all; }
+.about .pdef-credit {
+  max-width: 28em;
+  margin: 2.8em auto 0;
+  padding-top: 1em;
+  border-top: 1px solid ${style.accent};
+  font-family: "PT Sans", "Segoe UI", Arial, sans-serif;
+  font-size: 0.82em;
+  line-height: 1.45;
+  color: #6b6872;
+}
+.about .pdef-credit p { margin: 0 0 0.3em 0; }
+.about .pdef-credit .owner { font-size: 0.94em; color: #77737d; }
 
 a { color: ${style.accent}; }
 .u { text-decoration: underline; }
@@ -329,6 +348,11 @@ function aboutXhtml(book) {
     `    <p>Перевод выполнен командой «${esc(book.team)}».</p>`,
     '    <p class="label">Официальная страница команды:</p>',
     `    <p class="url"><a href="${escAttr(book.teamUrl)}">${esc(book.teamUrl)}</a></p>`,
+    '    <div class="pdef-credit">',
+    `      <p>Документ создан с помощью <a href="${escAttr(PDEF_URL)}"><strong>${esc(PDEF_NAME)}</strong></a>.</p>`,
+    `      <p>Разработчик — <a href="${escAttr(DEVELOPER_URL)}"><strong>${esc(DEVELOPER_NAME)}</strong></a></p>`,
+    `      <p class="owner">владелец команды «${esc(DEVELOPER_TEAM)}».</p>`,
+    '    </div>',
   ].join('\n');
   return page(book, { title: `О переводе — ${book.team}`, bodyClass: 'about', body });
 }

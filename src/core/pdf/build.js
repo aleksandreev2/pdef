@@ -10,6 +10,13 @@ const { buildChapterFlow, paginate } = require('./layout');
 const { renderPage, drawLine } = require('./render');
 const { drawTitleMark, drawPageFrame } = require('../signature');
 const { chapterLabel, chapterKicker } = require('../model');
+const {
+  PDEF_NAME,
+  PDEF_URL,
+  DEVELOPER_NAME,
+  DEVELOPER_URL,
+  DEVELOPER_TEAM,
+} = require('../credits');
 
 /**
  * Сборка мобильного PDF из единого представления книги.
@@ -450,6 +457,50 @@ function drawTranslationPage(doc, book, geom, style, ctx) {
     doc.text(chunk, x, y, { lineBreak: false });
     doc.link(x, y - 1, w, 11, url);
     y += 12;
+  }
+
+  // Ненавязчивая подпись авторства PDeF в нижней части служебной страницы.
+  // Ссылки остаются кликабельными и не смешиваются с данными переводчиков.
+  const creditRuleY = geom.contentBottom - mm(27);
+  doc.lineWidth(0.45).strokeColor('#D8D4DC');
+  doc.moveTo(geom.pageW / 2 - mm(13), creditRuleY)
+    .lineTo(geom.pageW / 2 + mm(13), creditRuleY)
+    .stroke();
+
+  let creditY = creditRuleY + mm(4);
+  drawCenteredSegments(doc, [
+    { text: 'Документ создан с помощью ', font: FONT.sans, color: '#6B6872' },
+    { text: PDEF_NAME, font: FONT.sansB, color: style.accent, url: PDEF_URL },
+    { text: '.', font: FONT.sans, color: '#6B6872' },
+  ], creditY, 8.6, geom);
+
+  creditY += 11.5;
+  drawCenteredSegments(doc, [
+    { text: 'Разработчик — ', font: FONT.sans, color: '#6B6872' },
+    { text: DEVELOPER_NAME, font: FONT.sansB, color: style.accent, url: DEVELOPER_URL },
+  ], creditY, 8.4, geom);
+
+  creditY += 10.8;
+  drawCenteredSegments(doc, [
+    { text: `владелец команды «${DEVELOPER_TEAM}».`, font: FONT.sans, color: '#77737D' },
+  ], creditY, 8.1, geom);
+}
+
+function drawCenteredSegments(doc, segments, y, size, geom) {
+  const widths = segments.map((segment) => {
+    doc.font(segment.font || FONT.sans).fontSize(size);
+    return doc.widthOfString(segment.text);
+  });
+  const total = widths.reduce((sum, width) => sum + width, 0);
+  let x = geom.contentX + (geom.contentW - total) / 2;
+
+  for (let i = 0; i < segments.length; i += 1) {
+    const segment = segments[i];
+    const width = widths[i];
+    doc.font(segment.font || FONT.sans).fontSize(size).fillColor(segment.color || '#6B6872');
+    doc.text(segment.text, x, y, { lineBreak: false });
+    if (segment.url) doc.link(x, y - 1, width, size * 1.35, segment.url);
+    x += width;
   }
 }
 
