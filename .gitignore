@@ -1,0 +1,8 @@
+node_modules/
+dist/
+assets/fonts/*.ttf
+assets/fonts/*.otf
+*.log
+
+# Generated books
+Файлы/

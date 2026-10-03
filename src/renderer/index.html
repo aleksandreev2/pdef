@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' file:"/>
+<title>PDFMaker Mobile</title>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 120 32" aria-hidden="true">
+      <g fill="none" stroke="currentColor" stroke-width="1.4">
+        <path d="M14 16 H48"/><path d="M72 16 H106"/>
+        <path d="M60 9 L67 16 L60 23 L53 16 Z"/>
+      </g>
+      <g fill="currentColor"><circle cx="8" cy="16" r="2"/><circle cx="112" cy="16" r="2"/></g>
+    </svg>
+    <div>
+      <h1>PDFMaker Mobile</h1>
+      <p id="brandSub">Мобильный PDF и EPUB&nbsp;3 из отдельных глав</p>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <div id="statusLine" class="status">Добавьте главы, чтобы начать</div>
+    <button id="buildBtn" class="primary" disabled>Собрать книгу</button>
+  </div>
+</header>
+
+<div id="progressBar" class="progress" hidden><div id="progressFill"></div></div>
+
+<main class="layout">
+
+  <!-- ─────────────── левая колонка ─────────────── -->
+  <aside class="side">
+
+    <section class="card">
+      <h2>1. Исходники</h2>
+      <div id="dropZone" class="dropzone">
+        <strong>Перетащите сюда главы</strong>
+        <span>TXT · DOCX · Google&nbsp;Docs&nbsp;DOCX · папка · ZIP</span>
+      </div>
+      <div class="row">
+        <button id="pickFilesBtn">Файлы…</button>
+        <button id="pickFolderBtn">Папка…</button>
+        <button id="clearBtn" class="ghost" disabled>Очистить</button>
+      </div>
+      <ul id="sourceList" class="source-list"></ul>
+    </section>
+
+    <section class="card">
+      <h2>2. Книга</h2>
+      <label>Название книги
+        <input id="metaTitle" type="text" placeholder="Впишите название" autocomplete="off"/>
+      </label>
+      <label>Подзаголовок
+        <input id="metaSubtitle" type="text" value="Полное издание" autocomplete="off"/>
+      </label>
+      <label>Команда перевода
+        <input id="metaTeam" type="text" value="Дом Некроманта" autocomplete="off"/>
+      </label>
+      <label>Официальная ссылка
+        <input id="metaUrl" type="text" value="https://ranobelib.me/ru/team/11969--dom-nekromanta" autocomplete="off"/>
+      </label>
+    </section>
+
+    <section class="card">
+      <h2>3. Обложка</h2>
+      <div class="cover-row">
+        <div id="coverPreview" class="cover-preview"><span>нет обложки</span></div>
+        <div class="cover-controls">
+          <select id="coverSelect"><option value="">— не выбрана —</option></select>
+          <button id="pickCoverBtn" class="ghost">Выбрать файл…</button>
+          <label class="inline">
+            <input id="coverFit" type="checkbox"/>
+            <span>Заполнить страницу</span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4. Оформление</h2>
+      <label class="inline-between">Акцентный цвет
+        <span class="accent-group">
+          <input id="styleAccent" type="color" value="#6E5A7B"/>
+          <button id="accentAutoBtn" class="ghost small" title="Взять спокойный цвет из обложки">из обложки</button>
+        </span>
+      </label>
+
+      <div class="grid2">
+        <label>Основной шрифт
+          <select id="styleSerif"><option value="auto">авто</option></select>
+        </label>
+        <label>Служебный шрифт
+          <select id="styleSans"><option value="auto">авто</option></select>
+        </label>
+      </div>
+
+      <label class="slider">Кегль основного текста <output id="outBody">11.5 pt</output>
+        <input id="styleBody" type="range" min="11.2" max="12" step="0.1" value="11.5"/>
+      </label>
+      <label class="slider">Межстрочный интервал <output id="outLead">1.46</output>
+        <input id="styleLead" type="range" min="1.42" max="1.5" step="0.01" value="1.46"/>
+      </label>
+      <label class="slider">Поля слева и справа <output id="outSide">10 мм</output>
+        <input id="styleSide" type="range" min="9" max="11" step="0.5" value="10"/>
+      </label>
+      <label class="slider">Кегль системных блоков <output id="outSys">10 pt</output>
+        <input id="styleSys" type="range" min="9.5" max="12" step="0.5" value="10"/>
+      </label>
+
+      <div class="checks">
+        <label class="inline"><input id="styleJustify" type="checkbox" checked/><span>Выключка по формату</span></label>
+        <label class="inline"><input id="styleHyphen" type="checkbox" checked/><span>Переносы по слогам</span></label>
+        <label class="inline"><input id="styleSignature" type="checkbox" checked/><span>BOOK SIGNATURE</span></label>
+        <label class="inline"><input id="styleWidow" type="checkbox" checked/><span>Контроль сирот и вдов</span></label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>5. Вывод</h2>
+      <div class="row">
+        <button id="pickOutBtn" class="ghost">Папка…</button>
+        <span id="outDirLabel" class="muted">не выбрана</span>
+      </div>
+      <div class="checks">
+        <label class="inline"><input id="fmtPdf" type="checkbox" checked/><span>PDF — mobile-first</span></label>
+        <label class="inline"><input id="fmtEpub" type="checkbox" checked/><span>EPUB 3 — reflowable</span></label>
+      </div>
+      <p id="outNameHint" class="muted small"></p>
+    </section>
+
+  </aside>
+
+  <!-- ─────────────── правая область ─────────────── -->
+  <section class="main">
+    <nav class="tabs">
+      <button class="tab active" data-tab="chapters">Главы <span id="tabChaptersCount" class="pill">0</span></button>
+      <button class="tab" data-tab="audit">Аудит <span id="tabAuditCount" class="pill">—</span></button>
+      <button class="tab" data-tab="report">Отчёт</button>
+      <button class="tab" data-tab="preview">Предпросмотр</button>
+      <button class="tab" data-tab="log">Журнал</button>
+    </nav>
+
+    <div class="panels">
+
+      <div class="panel active" data-panel="chapters">
+        <div class="panel-head">
+          <div class="filters">
+            <input id="chapterFilter" type="search" placeholder="Поиск по названию или файлу"/>
+            <label class="inline"><input id="onlyProblems" type="checkbox"/><span>только с замечаниями</span></label>
+          </div>
+          <div class="bulk">
+            <button id="includeAllBtn" class="ghost small">Включить все</button>
+            <button id="resortBtn" class="ghost small">Порядок по номерам</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="chapters">
+            <thead>
+              <tr>
+                <th class="col-on"></th>
+                <th class="col-num">№</th>
+                <th class="col-title">Название</th>
+                <th class="col-kind">Тип</th>
+                <th class="col-num2">Слов</th>
+                <th class="col-num2">Илл.</th>
+                <th class="col-num2">Блоков</th>
+                <th class="col-issues">Замечания</th>
+              </tr>
+            </thead>
+            <tbody id="chapterBody">
+              <tr class="empty"><td colspan="8">Главы появятся здесь после разбора исходников</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel" data-panel="audit">
+        <div id="auditContent" class="audit">
+          <p class="muted">Аудит выполняется автоматически после добавления исходников.</p>
+        </div>
+      </div>
+
+      <div class="panel" data-panel="report">
+        <div id="reportContent" class="report">
+          <p class="muted">Здесь появится итоговый отчёт и результаты проверок.</p>
+        </div>
+      </div>
+
+      <div class="panel" data-panel="preview">
+        <div class="panel-head">
+          <div class="filters">
+            <span class="muted small">Страницы отрисованы в мобильной ширине</span>
+            <select id="previewWidth">
+              <option value="390">390 px</option>
+              <option value="410" selected>410 px</option>
+              <option value="430">430 px</option>
+            </select>
+          </div>
+          <button id="previewRefresh" class="ghost small" disabled>Обновить</button>
+        </div>
+        <div id="previewGrid" class="preview-grid">
+          <p class="muted">Предпросмотр появится после сборки PDF.</p>
+        </div>
+      </div>
+
+      <div class="panel" data-panel="log">
+        <pre id="logContent" class="log"></pre>
+      </div>
+
+    </div>
+  </section>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

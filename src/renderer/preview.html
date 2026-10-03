@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<title>Растеризация страниц PDF</title>
+<style>html,body{margin:0;background:#fff}</style>
+</head>
+<body>
+<script type="module">
+/* Растеризация страниц PDF через pdf.js. Используется и для визуального QA
+   в приложении, и для сохранения превью в PNG. */
+import * as pdfjs from '../../node_modules/pdfjs-dist/build/pdf.min.mjs';
+
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  '../../node_modules/pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
+).href;
+
+let docPromise = null;
+let currentPath = null;
+
+async function openDoc(fileUrl) {
+  if (currentPath !== fileUrl) {
+    if (docPromise) {
+      try { (await docPromise).destroy(); } catch { /* документ уже закрыт */ }
+    }
+    currentPath = fileUrl;
+    docPromise = pdfjs.getDocument({ url: fileUrl, useSystemFonts: false }).promise;
+  }
+  return docPromise;
+}
+
+/**
+ * @param {string} fileUrl  file:// адрес PDF
+ * @param {number[]} pages  номера страниц (с 1)
+ * @param {number} cssWidth ширина отрисовки в CSS-пикселях (мобильная ширина)
+ * @returns {Promise<Array<{page:number,dataUrl:string,width:number,height:number}>>}
+ */
+window.renderPages = async function renderPages(fileUrl, pages, cssWidth = 410) {
+  const doc = await openDoc(fileUrl);
+  const out = [];
+  for (const n of pages) {
+    if (n < 1 || n > doc.numPages) continue;
+    const page = await doc.getPage(n);
+    const base = page.getViewport({ scale: 1 });
+    const scale = (cssWidth / base.width) * 2; // ×2 — чёткость на HiDPI
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(viewport.width);
+    canvas.height = Math.round(viewport.height);
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: context, viewport }).promise;
+    out.push({
+      page: n,
+      dataUrl: canvas.toDataURL('image/png'),
+      width: canvas.width,
+      height: canvas.height,
+    });
+    page.cleanup();
+  }
+  return out;
+};
+
+window.pdfPageCount = async function pdfPageCount(fileUrl) {
+  const doc = await openDoc(fileUrl);
+  return doc.numPages;
+};
+
+window.__previewReady = true;
+</script>
+</body>
+</html>
