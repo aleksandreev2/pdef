@@ -3,6 +3,10 @@ import { renderSample, forgetDocument } from './pdf-preview.js';
 
 const api = window.api;
 const $ = (id) => document.getElementById(id);
+const OUTPUT_FORMATS = ['pdf','epub','fb2','mobi','azw3','txt'];
+const formatInput = key => $('fmt'+key[0].toUpperCase()+key.slice(1));
+const selectedFormats = () => Object.fromEntries(OUTPUT_FORMATS.map(key=>[key,formatInput(key).checked]));
+const hasFormat = () => OUTPUT_FORMATS.some(key=>formatInput(key).checked);
 
 /* ───────────────────────────── состояние ───────────────────────────── */
 
@@ -61,7 +65,8 @@ function setStatus(text) {
 
 function setBusy(busy, label) {
   state.busy = busy;
-  $('buildBtn').disabled = busy || !state.chapters.some((c) => c.include);
+  $('buildBtn').disabled = busy || !state.chapters.some((c) => c.include) || !hasFormat();
+  OUTPUT_FORMATS.forEach(key=>{formatInput(key).disabled=busy;});
   $('pickFilesBtn').disabled = busy;
   $('pickFolderBtn').disabled = busy;
   $('clearBtn').disabled = busy || !state.sources.length;
@@ -304,7 +309,7 @@ function pushEdits() {
         if (fresh) Object.assign(ch, { words: fresh.words, images: fresh.images, systemBlocks: fresh.systemBlocks });
       }
       $('tabChaptersCount').textContent = String(state.chapters.filter((c) => c.include).length);
-      $('buildBtn').disabled = state.busy || !state.chapters.some((c) => c.include);
+      $('buildBtn').disabled = state.busy || !state.chapters.some((c) => c.include) || !hasFormat();
       updateOutNameHint();
       renderAudit();
     } catch (e) {
@@ -507,10 +512,12 @@ function updateOutNameHint() {
   const name = nums.length
     ? `${base}_главы_${String(nums[0]).padStart(3, '0')}-${String(nums[nums.length - 1]).padStart(3, '0')}`
     : `${base}_полное_издание`;
-  $('outNameHint').textContent = `Файлы: ${name}.pdf · ${name}.epub`;
+  const selected=OUTPUT_FORMATS.filter(key=>formatInput(key).checked);
+  $('outNameHint').textContent = selected.length ? `Файлы: ${selected.map(key=>name+'.'+key).join(' · ')}` : 'Выберите хотя бы один формат';
 }
 
 async function runBuild() {
+  if(!hasFormat()) {setStatus('Выберите хотя бы один формат для сохранения');return;}
   if (!state.outDir) {
     const dir = await api.pickOutDir();
     if (!dir) return;
@@ -538,7 +545,7 @@ async function runBuild() {
       },
       style: collectStyle(),
       outDir: state.outDir,
-      formats: { pdf: $('fmtPdf').checked, epub: $('fmtEpub').checked },
+      formats: selectedFormats(),
     });
 
     state.report = report;
@@ -546,7 +553,8 @@ async function runBuild() {
     switchTab('report');
 
     const secs = ((Date.now() - started) / 1000).toFixed(1);
-    setStatus(`Готово за ${secs} с · ${report.pdf ? `${fmt(report.pdf.pages)} страниц PDF` : 'EPUB собран'}`);
+    const saved=OUTPUT_FORMATS.filter(key=>report[key]).map(key=>key.toUpperCase()).join(', ');
+    setStatus(`Готово за ${secs} с · ${saved}`);
     log(`Готово за ${secs} с`);
 
     if (report.pdf) {
@@ -589,12 +597,14 @@ function renderReport(report) {
     first && last ? `Собраны главы ${String(first.number).padStart(3, '0')}–${String(last.number).padStart(3, '0')}.` : 'Книга собрана.';
   parts.push(`<h3>Готово</h3><p>${range}</p>`);
 
-  for (const [kind, data] of [['PDF', report.pdf], ['EPUB', report.epub]]) {
+  for (const key of OUTPUT_FORMATS) {
+    const kind=key.toUpperCase(),data=report[key];
     if (!data) continue;
     const meta =
       kind === 'PDF'
         ? `${fmt(data.pages)} страниц · оглавление ${data.tocPages} стр. · закладок ${data.bookmarks} · ${bytes(data.size)}`
-        : `${fmt(data.documents)} документов · иллюстраций ${data.images} · ${bytes(data.size)}`;
+        : key === 'epub' ? `${fmt(data.documents)} документов · иллюстраций ${data.images} · ${bytes(data.size)}`
+        : `${fmt(data.chapters)} разделов · ${key==='txt' ? 'обычный текст · ' : `иллюстраций ${fmt(data.images)} · `}${bytes(data.size)}`;
     parts.push(
       `<div class="file-out"><div><div class="name">${data.path.split(/[\\/]/).pop()}</div>` +
         `<div class="meta">${meta}</div></div><div class="actions">` +
@@ -630,11 +640,11 @@ function renderReport(report) {
 
   if (report.qa.pdf) parts.push(`<h3>PDF — структурная проверка</h3>${checkList(report.qa.pdf)}`);
   if (report.qa.epub) parts.push(`<h3>EPUB — структурная проверка</h3>${checkList(report.qa.epub)}`);
+  for(const key of OUTPUT_FORMATS.filter(key=>!['pdf','epub'].includes(key))) if(report.qa[key]) parts.push(`<h3>${key.toUpperCase()} — проверка файла</h3>${checkList(report.qa[key])}`);
 
   const warn = [
     ...(report.fontWarnings || []),
-    ...((report.pdf && report.pdf.warnings) || []),
-    ...((report.epub && report.epub.warnings) || []),
+    ...OUTPUT_FORMATS.flatMap(key=>report[key]?.warnings || []),
   ];
   if (warn.length) {
     parts.push(`<h3>Предупреждения</h3><ul class="note-list">${warn.map((w) => `<li>${w}</li>`).join('')}</ul>`);
@@ -796,6 +806,10 @@ async function init() {
   $('chapterFilter').addEventListener('input', renderChapters);
   $('onlyProblems').addEventListener('change', renderChapters);
   $('metaTitle').addEventListener('input', updateOutNameHint);
+  OUTPUT_FORMATS.forEach(key=>formatInput(key).addEventListener('change',()=>{
+    updateOutNameHint();
+    $('buildBtn').disabled=state.busy || !state.chapters.some(c=>c.include) || !hasFormat();
+  }));
 
   $('includeAllBtn').addEventListener('click', () => {
     for (const ch of state.chapters) if (ch.blocks > 0) ch.include = true;

@@ -5,7 +5,7 @@
  *
  *   node scripts/cli.js --in <путь|zip> [...] --out <папка> --title "Название"
  *                       [--team "Дом Некроманта"] [--url <ссылка>]
- *                       [--accent "#6E5A7B"] [--only pdf|epub]
+ *                       [--accent "#6E5A7B"] [--only pdf|epub|fb2|mobi|azw3|txt|all]
  */
 
 const path = require('path');
@@ -41,6 +41,9 @@ function bar(p) {
     console.error('Укажите --in <путь к папке, zip или файлам>');
     process.exit(1);
   }
+  const supported=['pdf','epub','fb2','mobi','azw3','txt'];
+  if(args.only && args.only!=='all' && !supported.includes(args.only)) throw new Error('Неизвестный формат --only: '+args.only);
+  const formats=Object.fromEntries(supported.map(k=>[k,args.only==='all' || (args.only ? args.only===k : ['pdf','epub'].includes(k))]));
 
   let last = '';
   const onProgress = (p) => {
@@ -78,7 +81,7 @@ function bar(p) {
       },
       style: { genre: args.genre, ...(args.accent ? { accent: args.accent } : {}) },
       outDir: path.resolve(args.out),
-      formats: { pdf: args.only !== 'epub', epub: args.only !== 'pdf' },
+      formats,
     },
     onProgress,
   );
@@ -93,6 +96,7 @@ function bar(p) {
     console.log(`EPUB: ${report.epub.path}`);
     console.log(`      документов ${report.epub.documents}, изображений ${report.epub.images}, ${(report.epub.size / 1048576).toFixed(2)} МБ`);
   }
+  for(const kind of ['fb2','mobi','azw3','txt']) if(report[kind]) console.log(`${kind.toUpperCase()}: ${report[kind].path}\n      разделов ${report[kind].chapters}, ${(report[kind].size/1048576).toFixed(2)} МБ`);
 
   for (const [kind, qa] of Object.entries(report.qa)) {
     if (!qa) continue;
@@ -102,8 +106,7 @@ function bar(p) {
     }
     for (const n of qa.notes || []) console.log(`  · ${n}`);
   }
-  if (report.pdf && report.pdf.warnings.length) console.log('\nPDF warnings:', report.pdf.warnings.slice(0, 8));
-  if (report.epub && report.epub.warnings.length) console.log('EPUB warnings:', report.epub.warnings.slice(0, 8));
+  for(const kind of supported) if(report[kind]?.warnings.length) console.log(`\n${kind.toUpperCase()} warnings:`,report[kind].warnings.slice(0,8));
 })().catch((e) => {
   console.error('\nОШИБКА:', e.message);
   console.error(e.stack);

@@ -2,6 +2,7 @@
 
 const path = require('path');
 const fs = require('fs/promises');
+const os = require('os');
 
 const { importSources, sortChapters } = require('./import');
 const { auditChapters } = require('./audit');
@@ -13,6 +14,10 @@ const { buildPdf } = require('./pdf/build');
 const { buildEpub } = require('./epub/build');
 const { checkPdf } = require('./qa/pdf');
 const { checkEpub } = require('./qa/epub');
+const { buildFb2 } = require('./export/fb2');
+const { buildTxt } = require('./export/text');
+const { findConverter, buildKindle } = require('./export/kindle');
+const { checkExport } = require('./qa/exports');
 
 /**
  * Один разобранный исходник — два формата (п.0 спецификации).
@@ -171,11 +176,17 @@ function outputBaseName(book) {
  * @param {object} opts.meta   { title, team, teamUrl, subtitle }
  * @param {object} opts.style
  * @param {string} opts.outDir
- * @param {{pdf:boolean, epub:boolean}} opts.formats
+ * @param {{pdf?:boolean, epub?:boolean, fb2?:boolean, mobi?:boolean, azw3?:boolean, txt?:boolean}} opts.formats
  */
 async function build(opts, onProgress = () => {}) {
   if (!session.book) throw new Error('Сначала выполните разбор исходников');
   const book = session.book;
+  const formats={pdf:true,epub:true,fb2:false,mobi:false,azw3:false,txt:false,...opts.formats};
+  const selected=['pdf','epub','fb2','mobi','azw3','txt'].filter(k=>formats[k]);
+  if(!selected.length) throw new Error('Выберите хотя бы один формат для сохранения');
+  const needKindle=formats.mobi || formats.azw3;
+  const converter=needKindle ? await findConverter() : null;
+  if(needKindle && !converter) throw new Error('Для экспорта MOBI и AZW3 нужен Calibre. Установите его с calibre-ebook.com.');
 
   Object.assign(book, {
     title: opts.meta.title || book.title || 'Книга',
@@ -187,7 +198,7 @@ async function build(opts, onProgress = () => {}) {
 
   const style = clampStyle(opts.style);
   const { serif, sans, fallback, warnings: fontWarnings } = resolveFonts(style);
-  if (!serif || !sans) {
+  if (formats.pdf && (!serif || !sans)) {
     throw new Error('Не найдены шрифты для сборки PDF. Положите PTSerif-Regular.ttf и PTSans-Regular.ttf в assets/fonts');
   }
   session.fontWarnings = fontWarnings;
@@ -201,71 +212,97 @@ async function build(opts, onProgress = () => {}) {
   const pdfPath = path.join(opts.outDir, `${base}.pdf`);
   const epubPath = path.join(opts.outDir, `${base}.epub`);
 
-  const wantPdf = opts.formats.pdf !== false;
-  const wantEpub = opts.formats.epub !== false;
+  const wantPdf = formats.pdf;
+  const wantEpub = formats.epub;
+  let temp=null, tempParent=null;
+  try {
+    let kindleEpubPath=epubPath;
+    if(needKindle && !wantEpub) {
+      tempParent=await fs.realpath(os.tmpdir());
+      temp=await fs.mkdtemp(path.join(tempParent,'pdfmaker-export-'));
+      kindleEpubPath=path.join(temp,'source.epub');
+    }
 
-  // Независимые операции выполняются параллельно (п.10 спецификации).
-  const tasks = [];
-  tasks.push(
-    wantPdf
-      ? buildPdf({ book, style, fonts: { serif, sans, fallback }, outPath: pdfPath, onProgress })
-      : Promise.resolve(null),
-  );
-  tasks.push(wantEpub ? buildEpub({ book, style, outPath: epubPath, onProgress }) : Promise.resolve(null));
+    // Независимые операции выполняются параллельно (п.10 спецификации).
+    const tasks = [];
+    tasks.push(
+      wantPdf
+        ? buildPdf({ book, style, fonts: { serif, sans, fallback }, outPath: pdfPath, onProgress })
+        : Promise.resolve(null),
+    );
+    tasks.push(wantEpub || needKindle ? buildEpub({ book, style, outPath: kindleEpubPath, onProgress }) : Promise.resolve(null));
+    tasks.push(formats.fb2 ? buildFb2({book,style,outPath:path.join(opts.outDir,base+'.fb2'),onProgress}) : Promise.resolve(null));
+    tasks.push(formats.txt ? buildTxt({book,outPath:path.join(opts.outDir,base+'.txt'),onProgress}) : Promise.resolve(null));
 
-  const [pdfResult, epubResult] = await Promise.all(tasks);
+    const settled=await Promise.allSettled(tasks);
+    const failure=settled.find(r=>r.status==='rejected');if(failure) throw failure.reason;
+    const [pdfResult, epubResult, fb2Result, txtResult] = settled.map(r=>r.value);
+    const extraResults={fb2:fb2Result,txt:txtResult};
+    // Convert serially so long novels do not double Calibre's memory use.
+    for(const format of ['mobi','azw3']) if(formats[format]) extraResults[format]=await buildKindle({book,format,epubPath:kindleEpubPath,outPath:path.join(opts.outDir,base+'.'+format),converter,onProgress});
 
-  /* ── QA: по одному проходу на формат, параллельно ── */
-  onProgress({ phase: 'qa', label: 'Проверка готовых файлов' });
-  const expected = {
-    sections: active.length,
-    tocPages: pdfResult ? pdfResult.tocPages : 0,
-    tocFirstPage: pdfResult ? pdfResult.tocFirstPage : 3,
-    chapterPages: pdfResult ? pdfResult.chapterPages : {},
-    firstContentPage: pdfResult ? pdfResult.firstContentPage : 1,
-  };
+    /* ── QA: по одному проходу на формат, параллельно ── */
+    onProgress({ phase: 'qa', label: 'Проверка готовых файлов' });
+    const expected = {
+      sections: active.length,
+      tocPages: pdfResult ? pdfResult.tocPages : 0,
+      tocFirstPage: pdfResult ? pdfResult.tocFirstPage : 3,
+      chapterPages: pdfResult ? pdfResult.chapterPages : {},
+      firstContentPage: pdfResult ? pdfResult.firstContentPage : 1,
+    };
 
-  const [pdfQa, epubQa] = await Promise.all([
-    pdfResult ? checkPdf(pdfPath, { book, expected }) : Promise.resolve(null),
-    epubResult ? checkEpub(epubPath, { book, expected }) : Promise.resolve(null),
-  ]);
+    const [pdfQa, epubQa] = await Promise.all([
+      pdfResult ? checkPdf(pdfPath, { book, expected }) : Promise.resolve(null),
+      wantEpub && epubResult ? checkEpub(epubPath, { book, expected }) : Promise.resolve(null),
+    ]);
+    const extraQa={};
+    await Promise.all(Object.entries(extraResults).filter(([,r])=>r).map(async([format])=>{
+      extraQa[format]=await checkExport(path.join(opts.outDir,base+'.'+format),{book,format});
+    }));
 
-  const report = {
-    title: book.title,
-    base,
-    pdf: pdfResult && {
-      path: pdfPath,
-      pages: pdfResult.pages,
-      tocPages: pdfResult.tocPages,
-      size: pdfResult.size,
-      bookmarks: pdfResult.bookmarks,
-      warnings: pdfResult.warnings,
-    },
-    epub: epubResult && {
-      path: epubPath,
-      size: epubResult.size,
-      documents: epubResult.documents,
-      images: epubResult.images,
-      warnings: epubResult.warnings,
-    },
-    stats: book.stats,
-    audit: book.audit,
-    style: {
-      genre: style.genre,
-      genreName: style.name,
-      serif: serif.name,
-      sans: sans.name,
-      bodySize: style.bodySize,
-      lineHeight: style.lineHeight,
-      accent: style.accent,
-      signature: style.signature,
-      pageFormat: `${style.pageWidthMm} × ${style.pageHeightMm} мм`,
-    },
-    fontWarnings,
-    qa: { pdf: pdfQa, epub: epubQa },
-  };
+    const report = {
+      title: book.title,
+      base,
+      pdf: pdfResult && {
+        path: pdfPath,
+        pages: pdfResult.pages,
+        tocPages: pdfResult.tocPages,
+        size: pdfResult.size,
+        bookmarks: pdfResult.bookmarks,
+        warnings: pdfResult.warnings,
+      },
+      epub: wantEpub && epubResult ? {
+        path: epubPath,
+        size: epubResult.size,
+        documents: epubResult.documents,
+        images: epubResult.images,
+        warnings: epubResult.warnings,
+      } : null,
+      ...Object.fromEntries(['fb2','mobi','azw3','txt'].map(format=>[format,extraResults[format] ? {path:path.join(opts.outDir,base+'.'+format),...extraResults[format]} : null])),
+      stats: book.stats,
+      audit: book.audit,
+      style: {
+        genre: style.genre,
+        genreName: style.name,
+        serif: serif?.name || 'авто',
+        sans: sans?.name || 'авто',
+        bodySize: style.bodySize,
+        lineHeight: style.lineHeight,
+        accent: style.accent,
+        signature: style.signature,
+        pageFormat: `${style.pageWidthMm} × ${style.pageHeightMm} мм`,
+      },
+      fontWarnings,
+      qa: { pdf: pdfQa, epub: epubQa, ...extraQa },
+    };
 
-  return report;
+    return report;
+  } finally {
+    if(temp) {
+      const real=await fs.realpath(temp);
+      if(path.dirname(real).toLowerCase()===tempParent.toLowerCase() && path.basename(real).startsWith('pdfmaker-export-')) await fs.rm(real,{recursive:true,force:true,maxRetries:3});
+    }
+  }
 }
 
 /** Данные ресурса как data URL — для предпросмотра обложки в интерфейсе. */

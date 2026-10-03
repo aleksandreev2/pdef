@@ -35,7 +35,7 @@ function parseArgs(argv) {
 const INSTALL_NOTE = `PDFMaker Mobile — установка
 ===========================
 
-Сборка мобильного PDF и EPUB 3 из отдельных глав (TXT, DOCX, Google Docs DOCX).
+Сборка PDF, EPUB, FB2, MOBI, AZW3 и TXT из отдельных глав.
 
 ЧТО НУЖНО
 ---------
@@ -55,6 +55,11 @@ Node.js 20 или новее — https://nodejs.org (обычная устано
 Первая команда ставит зависимости (нужен интернет; Electron весит около
 190 МБ, поэтому установка может занять и двадцать минут), вторая открывает
 приложение. В дальнейшем достаточно только npm start.
+
+Для экспорта MOBI и AZW3 один раз выполните npm run kindle-tools
+(официальный Calibre Portable, около 196 МБ). Можно также установить обычный
+Calibre с https://calibre-ebook.com/download_windows. FB2 и TXT дополнительных
+установок не требуют.
 
 Если в конце установки npm напишет, что пропустил install scripts у electron,
 выполните две команды и повторите запуск:
