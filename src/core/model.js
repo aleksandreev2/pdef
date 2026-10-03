@@ -143,7 +143,7 @@ function chapterKicker(ch) {
     case KIND.EXTRA:
       return 'ДОПОЛНИТЕЛЬНО';
     default:
-      return ch.number === null ? '' : `ГЛАВА ${String(ch.number).padStart(3, '0')}`;
+      return ch.number === null ? '' : `ГЛАВА ${String(ch.number)}`;
   }
 }
 

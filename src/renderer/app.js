@@ -726,6 +726,10 @@ function switchTab(name) {
 
 async function init() {
   const defaults = await api.styleDefaults();
+  for(const [id,key] of [['styleBody','bodySize'],['styleLead','lineHeight'],['styleSide','marginLeftMm'],['styleSys','systemSize']]) {
+    const input=$(id), limits=defaults.limits[key];
+    input.min=limits[0]; input.max=limits[1]; input.value=defaults.style[key];
+  }
   try {
     state.outDir = await api.outputDirectory();
     if (state.outDir) {
@@ -746,15 +750,16 @@ async function init() {
     if (resetColor) $('styleAccent').value = genre.accent;
     const accent = $('styleAccent').value;
     $('genreDescription').textContent = genre.description;
-    $('genreOpener').innerHTML = $('styleSignature').checked ? genre.opener : '';
-    $('genreDivider').innerHTML = genre.divider;
+    const decorated = $('styleSignature').checked;
+    const colorize = svg => (svg || '').replaceAll(genre.accent, accent);
+    for(const [id,key] of [['genreOpener','opener'],['genreDivider','divider'],['genreFrame','frame'],['genreIcon','icon'],['genreFolio','folio']]) {
+      $(id).innerHTML = decorated ? colorize(genre[key]) : '';
+    }
+    $('genreNoteCorners').innerHTML = decorated ? ['tl','tr','bl','br'].map(c=>`<span class="genre-note-corner corner-${c}">${colorize(genre.corner)}</span>`).join('') : '';
+    $('genrePreview').classList.toggle('plain',!decorated);
     $('genrePreview').style.setProperty('--genre-accent', accent);
     $('genrePreview').style.setProperty('--genre-bg', genre.systemBg);
     $('genreNote').style.borderRadius = genre.panel === 'rounded' ? '6px' : '0';
-    document.querySelectorAll('#genrePreview svg path').forEach(p => {
-      p.setAttribute('stroke', accent);
-      if (p.getAttribute('fill') !== 'none') p.setAttribute('fill', accent);
-    });
   };
   $('styleGenre').addEventListener('change', () => updateGenrePreview(true));
   $('styleAccent').addEventListener('input', () => updateGenrePreview());

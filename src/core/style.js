@@ -26,9 +26,9 @@ const DEFAULT_STYLE = {
   serif: 'auto', // основной (PT Serif или качественный кириллический serif)
   sans: 'auto', // служебный (PT Sans или совместимый sans-serif)
 
-  // Основной текст: 11.2–12 pt, интерлиньяж 1.42–1.50
-  bodySize: 11.5,
-  lineHeight: 1.46,
+  // Более крупный текст на мобильной странице, как в выбранном образце.
+  bodySize: 14,
+  lineHeight: 1.36,
   paragraphIndentMm: 4.5,
   justify: true,
   hyphenate: true,
@@ -37,14 +37,14 @@ const DEFAULT_STYLE = {
   accent: '#6E5A7B', // спокойный цвет; переопределяется цветом из обложки
 
   // Opener главы
-  kickerSize: 8.5, // номер главы: 8–9 pt
-  chapterTitleSize: 17.5, // название: 16–19 pt
-  openerGapMm: 7.5, // отступ до текста: 6–9 мм
+  kickerSize: 10.5,
+  chapterTitleSize: 25.5,
+  openerGapMm: 11,
 
-  // Системные блоки: sans-serif 9.5–10.5 pt
-  systemSize: 10,
-  systemLineHeight: 1.34,
-  systemPadMm: 3,
+  // Декоративные записи — serif, обычные панели — служебный шрифт.
+  systemSize: 12,
+  systemLineHeight: 1.4,
+  systemPadMm: 4,
   systemBg: '#F4F2F6',
   systemBorder: '#D8D2DF',
 
@@ -52,7 +52,7 @@ const DEFAULT_STYLE = {
   tocSize: 10,
 
   // Колонтитул: номер страницы 7.5–8.5 pt
-  folioSize: 8,
+  folioSize: 10,
   folioBrand: false,
 
   signature: true, // BOOK SIGNATURE
@@ -60,21 +60,21 @@ const DEFAULT_STYLE = {
   widowControl: true,
 };
 
-/** Допустимые диапазоны из спецификации — UI не даёт выйти за них. */
+/** Диапазоны включают и прежний компактный стиль, и новое оформление. */
 const LIMITS = {
-  bodySize: [11.2, 12],
-  lineHeight: [1.42, 1.5],
+  bodySize: [10, 18],
+  lineHeight: [1.25, 1.6],
   marginLeftMm: [9, 11],
   marginRightMm: [9, 11],
   marginTopMm: [10, 12],
   marginBottomMm: [12, 15],
   paragraphIndentMm: [4, 5],
-  kickerSize: [8, 9],
-  chapterTitleSize: [16, 19],
-  openerGapMm: [6, 9],
-  systemSize: [9.5, 12],
+  kickerSize: [8, 13],
+  chapterTitleSize: [16, 30],
+  openerGapMm: [6, 14],
+  systemSize: [9.5, 16],
   tocSize: [9.5, 10.5],
-  folioSize: [7.5, 8.5],
+  folioSize: [7.5, 12],
 };
 
 function clampStyle(style) {

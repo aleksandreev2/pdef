@@ -286,6 +286,7 @@ function drawTypographicCover(doc, book, geom, style, ctx) {
 }
 
 function drawTitlePage(doc, book, geom, style, ctx, sectionCount) {
+  if(style.signature) doc.rect(0,0,geom.pageW,geom.pageH).fillColor('#FFFCF6').fill();
   drawPageFrame(doc, geom, style);
   const stats = book.stats || { words: 0 };
   let y = geom.contentY + mm(14);

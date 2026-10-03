@@ -1,7 +1,7 @@
 'use strict';
 
 const { chapterLabel, chapterKicker } = require('../model');
-const { svgTitleMark, svgSceneBreak } = require('../signature');
+const { svgTitleMark, svgSceneBreak, svgSystemIcon, svgPanelCorner } = require('../signature');
 
 /** Экранирование текста для XML. */
 function esc(s) {
@@ -161,7 +161,7 @@ h1.chapter-title {
 }
 
 p.kicker {
-  font-family: "PT Sans", "Segoe UI", Arial, sans-serif;
+  font-family: "PT Serif", Georgia, serif;
   font-size: 0.72em;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -182,7 +182,7 @@ p.kicker {
   border: 1px solid ${style.systemBorder};
   border-radius: ${style.panel === 'rounded' ? '0.4em' : '0'};
   border-left: 2px solid ${style.accent};
-  font-family: "PT Sans", "Segoe UI", Arial, sans-serif;
+  font-family: "${style.signature ? 'PT Serif' : 'PT Sans'}", Georgia, serif;
   font-size: 0.9em;
   line-height: 1.38;
   page-break-inside: auto;
@@ -204,7 +204,22 @@ p.kicker {
   color: ${style.accent};
 }
 
-.scene svg { width: 65%; max-width: 13em; height: auto; }
+.scene svg { width: 100%; max-width: 22em; height: auto; }
+
+/* Рамка главы следует потоку EPUB; читалка сохраняет своё разбиение страниц. */
+.chapter.decorated { position: relative; padding: 0.8em 1.2em 1.6em; border-left: 1px solid ${style.systemBorder}; border-right: 1px solid ${style.systemBorder}; }
+.chapter-corner { position: absolute; width: 1.6em; height: 1.6em; }
+.chapter-corner svg, .panel-corner svg { width: 100%; height: 100%; }
+.corner-tl { left: 0; top: 0; }
+.corner-tr { right: 0; top: 0; transform: scaleX(-1); }
+.corner-bl { left: 0; bottom: 0; transform: scaleY(-1); }
+.corner-br { right: 0; bottom: 0; transform: scale(-1); }
+.kicker-rule { width: 35%; height: 0; margin: 0.6em auto 1em; border-top: 1px solid ${style.accent}; }
+.decorated .sysblock { position: relative; border: 1px solid ${style.accent}; border-left-width: 1px; padding: 0.9em 0.9em 0.9em 3.9em; }
+.system-icon { position: absolute; left: 0.75em; top: 0.85em; width: 2.35em; height: 2.35em; }
+.system-icon svg { width: 100%; height: 100%; }
+.sysblock p:first-of-type strong { color: ${style.accent}; }
+.panel-corner { position: absolute; width: 0.9em; height: 0.9em; }
 
 figure {
   margin: 1.1em 0;
@@ -334,9 +349,11 @@ function aboutXhtml(book) {
 /** Блоки главы → XHTML. */
 function chapterBody(ch, style, hrefOfAsset) {
   const out = [];
+  if (style.signature) for(const corner of ['tl','tr','bl','br']) out.push(`<span class="chapter-corner corner-${corner}">${svgPanelCorner(style.accent,style.genre)}</span>`);
   if (style.signature) out.push(`    <p class="opener-mark">${svgTitleMark(style.accent, style.genre)}</p>`);
   const kicker = chapterKicker(ch);
   if (kicker) out.push(`    <p class="kicker">${esc(kicker)}</p>`);
+  if(style.signature && kicker) out.push('    <div class="kicker-rule"></div>');
   if (ch.title) out.push(`    <h1 class="chapter-title">${esc(ch.title)}</h1>`);
   else if (kicker) out.push(`    <h1 class="chapter-title">${esc(kicker)}</h1>`);
 
@@ -345,7 +362,8 @@ function chapterBody(ch, style, hrefOfAsset) {
     switch (block.type) {
       case 'para': {
         const cls = firstPara ? ' class="noindent"' : '';
-        out.push(`    <p${cls}>${runsToHtml(block.runs)}</p>`);
+        const alignment = ['left','center','right','justify'].includes(block.align) ? ` style="text-align:${block.align};text-indent:0"` : '';
+        out.push(`    <p${cls}${alignment}>${runsToHtml(block.runs)}</p>`);
         firstPara = false;
         break;
       }
@@ -355,7 +373,8 @@ function chapterBody(ch, style, hrefOfAsset) {
         break;
       case 'system': {
         const lines = block.lines.map((runs) => `      <p>${runsToHtml(runs)}</p>`).join('\n');
-        out.push(`    <div class="sysblock" role="note">\n${lines}\n    </div>`);
+        const decoration = style.signature ? `<span class="system-icon">${svgSystemIcon(style.accent,style.genre)}</span>` + ['tl','tr','bl','br'].map(c=>`<span class="panel-corner corner-${c}">${svgPanelCorner(style.accent,style.genre)}</span>`).join('') : '';
+        out.push(`    <div class="sysblock" role="note">${decoration}\n${lines}\n    </div>`);
         firstPara = true;
         break;
       }
@@ -367,7 +386,7 @@ function chapterBody(ch, style, hrefOfAsset) {
         break;
       }
       case 'sep':
-        out.push(`    <p class="scene">${svgSceneBreak(style.accent, style.genre)}</p>`);
+        out.push(`    <p class="scene">${style.signature ? svgSceneBreak(style.accent, style.genre) : '* * *'}</p>`);
         firstPara = true;
         break;
       case 'image': {
@@ -390,7 +409,7 @@ function chapterBody(ch, style, hrefOfAsset) {
 function chapterXhtml(book, ch, style, hrefOfAsset) {
   return page(book, {
     title: chapterLabel(ch),
-    bodyClass: 'chapter',
+    bodyClass: style.signature ? 'chapter decorated' : 'chapter',
     epubType: 'chapter',
     body: chapterBody(ch, style, hrefOfAsset),
   });

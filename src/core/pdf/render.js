@@ -1,7 +1,7 @@
 'use strict';
 
 const { FONT } = require('./typeset');
-const { drawOpenerMark, drawSceneBreak, drawPageFrame } = require('../signature');
+const { drawOpenerMark, drawSceneBreak, drawPageFrame, drawArtwork, drawKickerRule, drawSystemDecoration } = require('../signature');
 
 /**
  * Отрисовка подготовленных страниц.
@@ -87,34 +87,24 @@ function drawSystemPart(doc, part, ctx) {
   const w = geom.contentW;
 
   doc.save();
-  // Светлый нейтральный фон и тонкая рамка; при переносе рамка не замыкается.
-  doc.roundedRect(x, part.y, w, boxH, part.continued || part.continuesOnNext || style.panel !== 'rounded' ? 0 : 4)
-    .fillColor(style.systemBg)
-    .fill();
-  doc.lineWidth(0.5).strokeColor(style.systemBorder);
-  doc.moveTo(x, part.y).lineTo(x + w, part.y);
-  if (!part.continued) doc.stroke();
-  else doc.stroke(); // верхняя линия продолжения — та же тонкая черта
-
-  doc.moveTo(x, part.y).lineTo(x, part.y + boxH).stroke();
-  doc.moveTo(x + w, part.y).lineTo(x + w, part.y + boxH).stroke();
-  if (!part.continuesOnNext) {
-    doc.moveTo(x, part.y + boxH).lineTo(x + w, part.y + boxH).stroke();
-  }
+  const radius = style.panel === 'rounded' ? 4 : 0;
+  doc.roundedRect(x, part.y, w, boxH, radius).fillColor(style.systemBg).fill();
   doc.restore();
-
-  doc.save().strokeColor(style.accent).lineWidth(0.65);
-  if (style.panel === 'angular') {
-    doc.path(`M ${x} ${part.y+7} L ${x+7} ${part.y} L ${x+21} ${part.y} M ${x+w-21} ${part.y} L ${x+w-7} ${part.y} L ${x+w} ${part.y+7}`).stroke();
+  if (style.signature) {
+    drawSystemDecoration(doc,x,part.y,w,boxH,style,part);
+    if (!part.continued) {
+      const size = Math.min(33,boxH-8);
+      drawArtwork(doc,'icon',x+part.pad+1,part.y+(boxH-size)/2,size,size,style.accent,style.genre);
+    }
   } else {
-    doc.path(`M ${x+5} ${part.y+4} L ${x+23} ${part.y+4} M ${x+w-23} ${part.y+4} L ${x+w-5} ${part.y+4}`).stroke();
+    doc.save().lineWidth(.5).strokeColor(style.systemBorder).rect(x,part.y,w,boxH).stroke().restore();
   }
-  doc.restore();
 
   let y = part.y + topPad;
   for (const line of part.lines) {
     if (line.items.length) {
-      drawLine(doc, line, x + part.pad, y, part.size, ctx.style.textColor, ctx);
+      const color = line.items.every(w=>w.fmt && w.fmt.b) ? style.accent : style.textColor;
+      drawLine(doc, line, x + part.pad + part.iconColumn, y, part.size, color, ctx);
     }
     y += part.lineStep;
   }
@@ -124,18 +114,20 @@ function drawOpenerPart(doc, part, ctx) {
   const { geom, style } = ctx;
   let y = part.y;
 
-  if (style.signature) {
-    y += drawOpenerMark(doc, geom.pageW / 2, y, geom.contentW, style.accent, style.genre) + 5;
+  if (style.signature && !part.continued) {
+    y += drawOpenerMark(doc, geom.pageW / 2, y, geom.pageW-24, style.accent, style.genre) + 5;
   }
 
-  if (part.kicker) {
-    doc.font(FONT.sansB).fontSize(style.kickerSize).fillColor(style.accent);
+  if (part.kicker && !part.continued) {
+    doc.font(style.signature ? FONT.serif : FONT.sansB).fontSize(style.kickerSize).fillColor(style.accent);
     const width = doc.widthOfString(part.kicker, { characterSpacing: 0.9 });
     doc.text(part.kicker, (geom.pageW-width)/2, y, { lineBreak: false, characterSpacing: 0.9 });
-    y += style.kickerSize * 1.5 + 5;
+    y += style.kickerSize * 1.5;
+    if (style.signature) drawKickerRule(doc,geom.pageW/2,y+3,geom.contentW,style.accent);
+    y += style.signature ? 14 : 5;
   }
   for (const line of part.titleLines) {
-    drawLine(doc, line, geom.contentX, y, style.chapterTitleSize, style.textColor, ctx);
+    drawLine(doc, line, geom.contentX, y, part.titleSize, style.textColor, ctx);
     y += part.titleStep;
   }
 }
@@ -143,7 +135,10 @@ function drawOpenerPart(doc, part, ctx) {
 function drawSepPart(doc, part, ctx) {
   const { geom, style } = ctx;
   const cx = geom.contentX + geom.contentW / 2;
-  drawSceneBreak(doc, cx, part.y, style.accent, style.genre, Math.min(150, geom.contentW));
+  if (style.signature) drawSceneBreak(doc, cx, part.y, style.accent, style.genre, geom.contentW);
+  else {
+    doc.save().strokeColor(style.accent).lineWidth(.35).moveTo(cx-22,part.y+4).lineTo(cx+22,part.y+4).stroke().restore();
+  }
 }
 
 function drawImagePart(doc, part, ctx) {
@@ -164,15 +159,12 @@ function drawFolio(doc, pageNumber, ctx, page) {
   if (bigImage) return;
 
   const y = geom.pageH - geom.bottom + (geom.bottom - style.folioSize) / 2 - 1;
-  doc.font(FONT.sans).fontSize(style.folioSize).fillColor('#8A8A8A');
+  doc.font(style.signature ? FONT.serif : FONT.sans).fontSize(style.folioSize).fillColor(style.signature ? style.accent : '#8A8A8A');
   const label = String(pageNumber);
   const w = doc.widthOfString(label);
   doc.text(label, geom.contentX + (geom.contentW - w) / 2, y, { lineBreak: false });
   if (style.signature) {
-    doc.save().lineWidth(0.45).strokeColor(style.accent);
-    const cx = geom.pageW / 2;
-    doc.path(`M ${cx-30} ${y+4} L ${cx-12} ${y+4} M ${cx+12} ${y+4} L ${cx+30} ${y+4}`).stroke();
-    doc.restore();
+    drawArtwork(doc,'folio',geom.contentX,y-7,geom.contentW,geom.contentW*.1,style.accent,style.genre);
   }
 
   if (style.folioBrand) {
@@ -183,7 +175,11 @@ function drawFolio(doc, pageNumber, ctx, page) {
 }
 
 function renderPage(doc, page, pageNumber, ctx) {
-  if (!page.parts.some(p => p.t === 'image')) drawPageFrame(doc, ctx.geom, ctx.style);
+  if (!page.parts.some(p => p.t === 'image')) {
+    if (ctx.style.signature) doc.rect(0,0,ctx.geom.pageW,ctx.geom.pageH).fillColor('#FFFCF6').fill();
+    const firstBody=page.parts.find(p=>p.t!=='opener');
+    drawPageFrame(doc, ctx.geom, ctx.style,{opening:page.parts.some(p=>p.t==='opener'&&!p.continued),bodyTop:firstBody?firstBody.y:ctx.geom.contentBottom});
+  }
   for (const part of page.parts) {
     switch (part.t) {
       case 'opener':

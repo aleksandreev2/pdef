@@ -21,9 +21,12 @@ async function main() {
   const book = makeBook();
   book.title = 'Начало пути';
   book.chapters = [makeChapter({ id: 'ch1', number: 1, title: 'Начало пути', blocks: [
-    { type: 'para', runs: [{ text: 'За окном медленно светало. Он остановился у двери и прислушался к тишине. Утренний воздух обещал перемены, но пока никто не знал, какими они окажутся.' }] },
+    { type: 'para', align: 'left', runs: [{ text: 'За окном медленно светало.' }] },
+    { type: 'para', align: 'left', runs: [{ text: 'Он остановился у двери' }] },
+    { type: 'para', align: 'left', runs: [{ text: 'и прислушался к тишине.' }] },
     { type: 'sep', text: '──────────' },
-    { type: 'para', runs: [{ text: 'Впереди начиналась новая история. Первый шаг всегда кажется самым трудным, но дорога открывается тому, кто решается идти.' }] },
+    { type: 'para', align: 'center', runs: [{ text: 'Впереди начиналась' }] },
+    { type: 'para', align: 'center', runs: [{ text: 'новая история.' }] },
     { type: 'system', lines: [[{ text: 'Запись', b: true }], [{ text: 'Открыта новая глава.' }]] },
   ] })];
   book.stats = computeStats(book.chapters);

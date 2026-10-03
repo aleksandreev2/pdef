@@ -3,6 +3,7 @@
 const { layoutText, tokenize, FONT } = require('./typeset');
 const { mm } = require('../style');
 const { chapterKicker, chapterLabel } = require('../model');
+const { openerHeight, sceneHeight } = require('../signature');
 
 /**
  * Превращение блоков главы в поток измеренных элементов, затем — пагинация.
@@ -20,34 +21,22 @@ function buildChapterFlow(ch, ctx) {
   /* opener главы — компактный, всегда с новой страницы */
   const kicker = chapterKicker(ch);
   const titleTokens = ch.title ? tokenize([{ text: ch.title, b: true }], 'serif') : [];
-  const titleLines = ch.title
-    ? layoutText(titleTokens, {
-        width: geom.contentW,
-        size: style.chapterTitleSize,
-        firstIndent: 0,
-        justify: false,
-        hyphenate: false,
-        align: 'center',
-        measure,
-      })
-    : [];
-
-  const titleStep = style.chapterTitleSize * 1.18;
-  const openerH =
-    (kicker ? style.kickerSize * 1.5 + 5 : 0) +
-    (style.signature ? geom.contentW * 64 / 240 + 5 : 2) +
-    titleLines.length * titleStep +
-    mm(style.openerGapMm);
-
-  items.push({
-    t: 'opener',
-    kicker,
-    titleLines,
-    titleStep,
-    h: openerH,
-    newPage: true,
-    chapterId: ch.id,
-  });
+  const headerH = (kicker ? style.kickerSize*1.5+(style.signature?14:5) : 0) +
+    (style.signature ? openerHeight(geom.pageW-24)+5 : 2);
+  const afterTitleGap = mm(style.openerGapMm);
+  const titleBudget = geom.contentH-headerH-afterTitleGap-2*geom.lineStep;
+  const layTitle = size => ch.title ? layoutText(titleTokens, {
+    width:geom.contentW, size, firstIndent:0, justify:false,
+    hyphenate:false, align:'center', measure,
+  }) : [];
+  let titleSize=style.chapterTitleSize, titleLines=layTitle(titleSize);
+  // Обычные длинные названия уменьшаются; необычно длинные ниже переносятся.
+  while(titleSize>12 && titleLines.length*titleSize*1.18>titleBudget) {
+    titleSize=Math.max(12,titleSize-.5); titleLines=layTitle(titleSize);
+  }
+  const titleStep=titleSize*1.18;
+  items.push({t:'opener',kicker,titleLines,titleSize,titleStep,headerH,afterTitleGap,
+    h:headerH+titleLines.length*titleStep+afterTitleGap,newPage:true,chapterId:ch.id});
 
   let prevWasSystem = false;
 
@@ -114,10 +103,11 @@ function buildChapterFlow(ch, ctx) {
         const size = style.systemSize;
         const step = size * style.systemLineHeight;
         const pad = mm(style.systemPadMm);
-        const inner = geom.contentW - pad * 2;
+        const iconColumn = style.signature ? 38 : 0;
+        const inner = geom.contentW - pad * 2 - iconColumn;
         const laid = [];
         for (const runs of block.lines) {
-          const tokens = tokenize(runs, 'sans');
+          const tokens = tokenize(runs, style.signature ? 'serif' : 'sans');
           if (!tokens.length) {
             laid.push({ items: [], align: 'left' });
             continue;
@@ -141,6 +131,7 @@ function buildChapterFlow(ch, ctx) {
           lineStep: step,
           pad,
           inner,
+          iconColumn,
           h: laid.length * step + pad * 2,
           breakable: true, // длинный блок разрешено переносить на следующую страницу
           table: !!block.table,
@@ -184,9 +175,9 @@ function buildChapterFlow(ch, ctx) {
       }
 
       case 'sep': {
-        items.push({ t: 'gap', h: lineStep * 0.5 });
-        items.push({ t: 'sep', h: Math.min(150, geom.contentW) * 48 / 240 });
-        items.push({ t: 'gap', h: lineStep * 0.5 });
+        items.push({ t: 'gap', h: lineStep * 0.9 });
+        items.push({ t: 'sep', h: style.signature ? sceneHeight(geom.contentW) : 8 });
+        items.push({ t: 'gap', h: lineStep * 0.9 });
         prevWasSystem = false;
         break;
       }
@@ -247,8 +238,20 @@ function paginate(flowByChapter, ctx) {
       if (item.t === 'opener') {
         newPage(chapter.id);
         chapterStarts.set(chapter.id, pages.length - 1);
-        page.parts.push({ ...item, y });
-        y += item.h;
+        if(item.h<=geom.contentH) {
+          page.parts.push({...item,y}); y+=item.h;
+        } else {
+          let rest=item.titleLines, firstChunk=true;
+          while(rest.length) {
+            const headerH=firstChunk?item.headerH:0;
+            const capacity=Math.max(1,Math.floor((geom.contentH-headerH-item.afterTitleGap)/item.titleStep));
+            const titleLines=rest.slice(0,capacity); rest=rest.slice(capacity);
+            const h=headerH+titleLines.length*item.titleStep+(rest.length?0:item.afterTitleGap);
+            page.parts.push({...item,titleLines,continued:!firstChunk,h,y}); y+=h;
+            firstChunk=false;
+            if(rest.length) newPage(chapter.id);
+          }
+        }
         first = false;
         continue;
       }
