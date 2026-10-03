@@ -14,15 +14,18 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 
 const pipeline = require('../src/core/pipeline');
 const { DEFAULT_STYLE, LIMITS } = require('../src/core/style');
+const { GENRES } = require('../src/core/genres');
+const { svgTitleMark, svgSceneBreak } = require('../src/core/signature');
 const { availableFamilies, resolveFonts } = require('../src/core/fonts');
 
 function parseArgs(argv) {
-  const out = { in: '', out: '', shots: '', title: 'Тестовая книга' };
+  const out = { in: '', out: '', shots: '', title: 'Тестовая книга', genre: 'fantasy' };
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--in') out.in = argv[++i];
     else if (argv[i] === '--out') out.out = argv[++i];
     else if (argv[i] === '--shots') out.shots = argv[++i];
     else if (argv[i] === '--title') out.title = argv[++i];
+    else if (argv[i] === '--genre') out.genre = argv[++i];
   }
   return out;
 }
@@ -43,6 +46,7 @@ function registerIpc(win) {
   ipcMain.handle('asset:dataUrl', async (_e, id) => pipeline.assetDataUrl(id));
   ipcMain.handle('style:defaults', async () => ({
     style: DEFAULT_STYLE,
+    genres: GENRES.map(g => ({ ...g, opener: svgTitleMark(g.accent, g.id), divider: svgSceneBreak(g.accent, g.id) })),
     limits: LIMITS,
     families: availableFamilies(),
     warnings: resolveFonts({}).warnings,
@@ -113,6 +117,28 @@ app.whenReady().then(async () => {
     return;
   }
   await shot(win, '1-start');
+  const genreCheck = await win.webContents.executeJavaScript(`
+    (() => {
+      const select = document.getElementById('styleGenre');
+      const drawings = [];
+      for (const option of select.options) {
+        select.value = option.value;
+        select.dispatchEvent(new Event('change'));
+        drawings.push(document.getElementById('genreDivider').innerHTML);
+        const preview = document.getElementById('genrePreview');
+        if (preview.style.getPropertyValue('--genre-accent') !== document.getElementById('styleAccent').value) return false;
+      }
+      select.value = ${JSON.stringify(args.genre)};
+      select.dispatchEvent(new Event('change'));
+      document.getElementById('styleAccent').value = '#123456';
+      document.getElementById('styleAccent').dispatchEvent(new Event('input'));
+      const colorUpdated = document.querySelector('#genrePreview svg path').getAttribute('stroke') === '#123456';
+      select.dispatchEvent(new Event('change'));
+      return select.options.length === 10 && new Set(drawings).size === 10 && colorUpdated;
+    })()
+  `);
+  if (!genreCheck) problems.push('Выбор жанра или обновление образца не работает');
+  console.log('→ десять жанров и обновление образца: ' + (genreCheck ? 'OK' : 'ОШИБКА'));
 
   console.log('→ разбор исходников');
   await win.webContents.executeJavaScript(
@@ -170,6 +196,10 @@ app.whenReady().then(async () => {
     })
   `);
   console.log('отчёт:', report);
+  const failures = await win.webContents.executeJavaScript(`
+    Object.values(window.__pdfmaker.state.report.qa).filter(Boolean).flatMap(q=>q.checks.filter(c=>!c.ok).map(c=>c.name+': '+c.detail))
+  `);
+  problems.push(...failures);
 
   console.log('→ предпросмотр');
   await win.webContents.executeJavaScript("window.__pdfmaker.switchTab('preview')");

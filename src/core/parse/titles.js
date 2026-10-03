@@ -52,6 +52,8 @@ function parseHeading(raw) {
 
   // Ведущий маркер заголовка из экспорта: «#000. Название»
   s = s.replace(/^#\s*/, '');
+  // «48-я глава. Название» встречается в исходниках WORKING.
+  s = s.replace(/^(\d{1,4})[-‑–]?(?:я|ая)\s+глава\s*[.:]?\s*/iu, 'Глава $1. ');
 
   // Явный тип раздела словом.
   for (const { re, kind } of KIND_WORDS) {
@@ -85,10 +87,10 @@ function parseHeading(raw) {
 
 /**
  * Определение раздела по имени файла.
- * Имя файла — первичный источник: именно оно задаёт порядок чтения.
+ * Имя файла — запасной источник до разбора явного заголовка документа.
  */
 function fromFilename(filename) {
-  const base = restoreFilenameChars(stripExt(filename));
+  const base = restoreFilenameChars(stripExt(filename)).replace(/^(глава|chapter|гл\.?)_+(\d)/iu, '$1 $2');
   const parsed = parseHeading(base);
   if (parsed) return parsed;
   return { kind: KIND.CHAPTER, number: null, title: base.trim() };

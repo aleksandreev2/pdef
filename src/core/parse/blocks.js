@@ -12,7 +12,7 @@ const { isTitleRepeat, parseHeading } = require('./titles');
  */
 
 /** Сценический разделитель целиком из декоративных символов. */
-const SEP_RE = /^[\s*\-–—=_~·•◆◇※#.·]{2,}$/u;
+const SEP_RE = /^[\s*\-–—―─━═=_~·•◆◇※#✦✧❖⁂]{2,}$/u;
 
 /** Строка системного окна/чата/панели. */
 function isSystemLine(text) {
@@ -81,16 +81,36 @@ function buildBlocks(rawParas, section) {
     });
   }
 
-  // Повтор заголовка в первом текстовом параграфе: убираем его из текста и
-  // забираем название оттуда — в документе пунктуация точнее, чем в имени
-  // файла, где «?» и «:» заменены файловой системой на подчёркивание.
+  // Явный заголовок первого параграфа переносим в метаданные раздела.
+  // Обычный текст со словами «глава» и «пролог» остаётся в книге.
   let droppedTitle = false;
   let headingFromText = null;
   const firstText = cleaned.find((c) => c.kind === 'text');
-  if (firstText && isTitleRepeat(firstText.text, section)) {
-    headingFromText = parseHeading(firstText.text);
-    cleaned.splice(cleaned.indexOf(firstText), 1);
+  const candidate = firstText && firstText.text.length <= 200 ? parseHeading(firstText.text) : null;
+  const explicit = firstText && /^(?:#\s*)?(?:(?:глава|chapter|ch\.?|гл\.?|пролог|prologue|эпилог|epilogue|послесловие|afterword|экстра|extra|бонус|bonus)(?![\p{L}])|\d{1,4}[-‑–]?(?:я|ая)\s+глава(?![\p{L}]))/iu.test(firstText.text);
+  const strictHeading = firstText && (
+    /^(?:#\s*)?(?:глава|chapter|ch\.?|гл\.?)\s*\d{1,4}\s*(?:$|[.:·]|[—–―-](?:\s|$))/iu.test(firstText.text) ||
+    /^(?:#\s*)?(?:пролог|prologue|эпилог|epilogue|послесловие(?:\s+автора)?|afterword|экстра|extra|бонус|bonus)\s*(?:$|[.:·]|[—–―-](?:\s|$))/iu.test(firstText.text) ||
+    /^\d{1,4}[-‑–]?(?:я|ая)\s+глава\s*(?:$|[.:])/iu.test(firstText.text));
+  const formattedHeading = firstText && (isHeadingStyle(firstText.style) || (firstText.runs.every(r => r.b) && firstText.align === 'center'));
+  const repeat = firstText && isTitleRepeat(firstText.text, section) &&
+    (!explicit || strictHeading || formattedHeading) && !/^\d+[—-][\p{L}]/u.test(firstText.text);
+  if (firstText && ((candidate && explicit && (strictHeading || formattedHeading)) || repeat)) {
+    headingFromText = candidate;
+    const index = cleaned.indexOf(firstText);
+    cleaned.splice(index, 1);
     droppedTitle = true;
+    // Экспорт Word часто разделяет «Глава 1» и название на два параграфа.
+    // Забираем вторую строку только при явном оформлении заголовка.
+    const next = cleaned[index];
+    if (headingFromText && !headingFromText.title && next && next.kind === 'text' &&
+        next.text.length <= 160 && !parseHeading(next.text) && !SEP_RE.test(next.text) &&
+        !isSystemLine(next.text) && !next.list &&
+        (isHeadingStyle(next.style) || (next.runs.every(r => r.b) &&
+         (next.align === 'center' || !/[.!?…]$/.test(next.text))))) {
+      headingFromText = { ...headingFromText, title: next.text };
+      cleaned.splice(index, 1);
+    }
   }
 
   const blocks = [];

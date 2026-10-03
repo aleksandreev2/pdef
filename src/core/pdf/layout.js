@@ -19,7 +19,7 @@ function buildChapterFlow(ch, ctx) {
 
   /* opener главы — компактный, всегда с новой страницы */
   const kicker = chapterKicker(ch);
-  const titleTokens = ch.title ? tokenize([{ text: ch.title, b: false }], 'serif') : [];
+  const titleTokens = ch.title ? tokenize([{ text: ch.title, b: true }], 'serif') : [];
   const titleLines = ch.title
     ? layoutText(titleTokens, {
         width: geom.contentW,
@@ -27,15 +27,15 @@ function buildChapterFlow(ch, ctx) {
         firstIndent: 0,
         justify: false,
         hyphenate: false,
-        align: 'left',
+        align: 'center',
         measure,
       })
     : [];
 
   const titleStep = style.chapterTitleSize * 1.18;
   const openerH =
-    (kicker ? style.kickerSize * 1.5 : 0) +
-    (style.signature ? 10 : 2) +
+    (kicker ? style.kickerSize * 1.5 + 5 : 0) +
+    (style.signature ? geom.contentW * 64 / 240 + 5 : 2) +
     titleLines.length * titleStep +
     mm(style.openerGapMm);
 
@@ -185,7 +185,7 @@ function buildChapterFlow(ch, ctx) {
 
       case 'sep': {
         items.push({ t: 'gap', h: lineStep * 0.5 });
-        items.push({ t: 'sep', text: block.text, h: lineStep * 1.1, fromSource: true });
+        items.push({ t: 'sep', h: Math.min(150, geom.contentW) * 48 / 240 });
         items.push({ t: 'gap', h: lineStep * 0.5 });
         prevWasSystem = false;
         break;

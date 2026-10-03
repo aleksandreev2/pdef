@@ -1,0 +1,44 @@
+'use strict';
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const PDFDocument = require('pdfkit');
+const { resolveFonts } = require('../src/core/fonts');
+const { createMeasurer } = require('../src/core/pdf/typeset');
+const { drawLine } = require('../src/core/pdf/render');
+test('CJK text uses an available fallback font without replacing its characters', { skip: !fs.existsSync('C:/Windows/Fonts/malgun.ttf') }, () => {
+  const doc = new PDFDocument({ autoFirstPage: false });
+  const measure = createMeasurer(doc, resolveFonts());
+  assert.equal(typeof measure.parts, 'function');
+  const parts = measure.parts('Сфера (怨氣玉)', 'sans');
+  assert.equal(parts.map(p => p.text).join(''), 'Сфера (怨氣玉)');
+  assert.ok(parts.some(p => p.fontKey === 'fallback' && p.text === '怨氣玉'));
+});
+test('justified PDF preserves the space after a fallback-font word', { skip: !fs.existsSync('C:/Windows/Fonts/malgun.ttf') }, async () => {
+  const doc = new PDFDocument({ margin: 0 });
+  const measure = createMeasurer(doc, resolveFonts());
+  const texts = ['Перед', '怨氣玉', 'после.'];
+  const size = 11.5;
+  const gap = measure.width(' ', 'serif', size) + 5;
+  let x = 20;
+  const items = texts.map(text => {
+    const item = { text, x, w: measure.width(text, 'serif', size), fontKey: 'serif', fmt: {}, spaceAfter: true };
+    x += item.w + gap;
+    return item;
+  });
+  items[2].spaceAfter = false;
+  const chunks = [];
+  doc.on('data', b => chunks.push(b));
+  const done = new Promise(resolve => doc.on('end', resolve));
+  drawLine(doc, { items }, 0, 30, size, '#141414', { measure: measure.width, fontParts: measure.parts });
+  doc.end();
+  await done;
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const pdf = await pdfjs.getDocument({ data: new Uint8Array(Buffer.concat(chunks)), isEvalSupported: false }).promise;
+  const page = await pdf.getPage(1);
+  const content = await page.getTextContent();
+  const after = content.items.find(it => it.str.includes('после.'));
+  assert.ok(after, 'Russian text remains searchable');
+  assert.ok(Math.abs(after.transform[4] - items[2].x) < 0.1, `${after.transform[4]} versus ${items[2].x}`);
+  await pdf.destroy();
+});

@@ -182,7 +182,7 @@ async function build(opts, onProgress = () => {}) {
   });
 
   const style = clampStyle(opts.style);
-  const { serif, sans, warnings: fontWarnings } = resolveFonts(style);
+  const { serif, sans, fallback, warnings: fontWarnings } = resolveFonts(style);
   if (!serif || !sans) {
     throw new Error('Не найдены шрифты для сборки PDF. Положите PTSerif-Regular.ttf и PTSans-Regular.ttf в assets/fonts');
   }
@@ -204,7 +204,7 @@ async function build(opts, onProgress = () => {}) {
   const tasks = [];
   tasks.push(
     wantPdf
-      ? buildPdf({ book, style, fonts: { serif, sans }, outPath: pdfPath, onProgress })
+      ? buildPdf({ book, style, fonts: { serif, sans, fallback }, outPath: pdfPath, onProgress })
       : Promise.resolve(null),
   );
   tasks.push(wantEpub ? buildEpub({ book, style, outPath: epubPath, onProgress }) : Promise.resolve(null));
@@ -247,6 +247,8 @@ async function build(opts, onProgress = () => {}) {
     stats: book.stats,
     audit: book.audit,
     style: {
+      genre: style.genre,
+      genreName: style.name,
       serif: serif.name,
       sans: sans.name,
       bodySize: style.bodySize,

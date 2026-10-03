@@ -8,7 +8,7 @@ const { geometry, mm } = require('../style');
 const { createMeasurer, layoutText, tokenize, FONT } = require('./typeset');
 const { buildChapterFlow, paginate } = require('./layout');
 const { renderPage, drawLine } = require('./render');
-const { drawTitleMark } = require('../signature');
+const { drawTitleMark, drawPageFrame } = require('../signature');
 const { chapterLabel, chapterKicker } = require('../model');
 
 /**
@@ -84,7 +84,7 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
     return dims;
   };
 
-  const ctx = { style, geom, measure, assets: book.assets, book, warnings, imageSize };
+  const ctx = { style, geom, measure, fontParts: measurer.parts, assets: book.assets, book, warnings, imageSize };
 
   /* ── 1. поток глав ── */
   const active = book.chapters.filter((c) => c.include && c.blocks.length);
@@ -262,7 +262,8 @@ function drawCover(doc, book, geom, warnings, style) {
 }
 
 function drawTypographicCover(doc, book, geom, style, ctx) {
-  doc.rect(0, 0, geom.pageW, geom.pageH).fillColor('#15131A').fill();
+  doc.rect(0, 0, geom.pageW, geom.pageH).fillColor(style.coverBg).fill();
+  drawPageFrame(doc, geom, { ...style, accent: '#CEBA93' });
   const lines = layoutText(tokenize([{ text: book.title }], 'serif'), {
     width: geom.contentW,
     size: 26,
@@ -277,7 +278,7 @@ function drawTypographicCover(doc, book, geom, style, ctx) {
     drawLine(doc, line, geom.contentX, y, 26, '#F4F1F6', ctx);
     y += 30;
   }
-  if (style.signature) drawTitleMark(doc, geom.pageW / 2, y + 14, geom.contentW, style.accent);
+  if (style.signature) drawTitleMark(doc, geom.pageW / 2, y + 14, geom.contentW, '#CEBA93', style.genre);
   doc.font(FONT.sans).fontSize(10).fillColor('#B9B2C2');
   const team = book.team;
   const tw = doc.widthOfString(team);
@@ -285,6 +286,7 @@ function drawTypographicCover(doc, book, geom, style, ctx) {
 }
 
 function drawTitlePage(doc, book, geom, style, ctx, sectionCount) {
+  drawPageFrame(doc, geom, style);
   const stats = book.stats || { words: 0 };
   let y = geom.contentY + mm(14);
 
@@ -303,7 +305,7 @@ function drawTitlePage(doc, book, geom, style, ctx, sectionCount) {
   }
 
   y += mm(3);
-  if (style.signature) y += drawTitleMark(doc, geom.pageW / 2, y, geom.contentW, style.accent) + mm(4);
+  if (style.signature) y += drawTitleMark(doc, geom.pageW / 2, y, geom.contentW, style.accent, style.genre) + mm(4);
 
   const center = (text, font, size, color, gapAfter) => {
     doc.font(font).fontSize(size).fillColor(color);

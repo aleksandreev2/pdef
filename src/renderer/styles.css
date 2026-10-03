@@ -428,3 +428,11 @@ td.col-title input:focus { background: var(--bg-input); border-color: var(--acce
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #302e3c; border-radius: 5px; border: 2px solid var(--bg); }
 ::-webkit-scrollbar-thumb:hover { background: #3c3949; }
+/* Образец использует те же SVG, что EPUB, и те же контуры, что PDF. */
+.genre-preview { background: #fffdf9; color: #202020; border: 1px solid var(--genre-accent); border-radius: 4px; padding: 15px 20px; margin: 10px 0 18px; text-align: center; }
+.genre-preview svg { display: block; width: 100%; height: auto; margin: 0 auto; }
+.genre-kicker { color: var(--genre-accent); letter-spacing: 0.12em; font-size: 10px; margin: 4px 0 8px; }
+.genre-title { font: bold 22px Georgia, serif; }
+.genre-preview p { font: 15px/1.6 Georgia, serif; text-align: left; margin: 12px 0 5px; }
+#genreDivider svg { width: 72%; }
+.genre-note { border: 1px solid var(--genre-accent); border-left-width: 3px; background: var(--genre-bg); font-size: 12px; padding: 10px; margin-top: 8px; text-align: left; }

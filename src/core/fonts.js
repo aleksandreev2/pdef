@@ -127,7 +127,9 @@ function resolveFonts(style = {}) {
   }
   if (serif && serif.synthetic.italic) warnings.push(`У ${serif.name} нет курсивного начертания — курсив будет заменён прямым`);
 
-  return { serif, sans, warnings };
+  // Дополнительный шрифт нужен для иероглифов в названиях навыков.
+  const fallback = pick(fontIndex(), ['malgun.ttf', 'simhei.ttf', 'notosanscjk-regular.otf', 'arialuni.ttf']);
+  return { serif, sans, fallback, warnings };
 }
 
 /** Список доступных семейств для выпадающих списков в UI. */

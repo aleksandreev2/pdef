@@ -4,12 +4,14 @@
 const MM = 72 / 25.4; // ≈ 2.834645669
 
 const mm = (v) => v * MM;
+const { genreProfile } = require('./genres');
 
 /**
  * STYLE PROFILE (п.3 спецификации) — выбирается один раз и применяется
  * ко всей книге без изменений между главами.
  */
 const DEFAULT_STYLE = {
+  genre: 'fantasy',
   // Страница: 108 × 192 мм, вертикальная, 9:16
   pageWidthMm: 108,
   pageHeightMm: 192,
@@ -76,12 +78,13 @@ const LIMITS = {
 };
 
 function clampStyle(style) {
-  const out = { ...DEFAULT_STYLE, ...(style || {}) };
+  const profile = genreProfile(style && style.genre);
+  const out = { ...DEFAULT_STYLE, ...profile, ...(style || {}), genre: profile.id };
   for (const [key, [lo, hi]] of Object.entries(LIMITS)) {
     const v = Number(out[key]);
     out[key] = Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : DEFAULT_STYLE[key];
   }
-  if (!/^#[0-9a-fA-F]{6}$/.test(out.accent)) out.accent = DEFAULT_STYLE.accent;
+  if (!/^#[0-9a-fA-F]{6}$/.test(out.accent)) out.accent = profile.accent;
   if (!/^#[0-9a-fA-F]{6}$/.test(out.textColor)) out.textColor = DEFAULT_STYLE.textColor;
   return out;
 }

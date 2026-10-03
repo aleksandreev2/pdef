@@ -12,7 +12,7 @@ const path = require('path');
 const { analyze, build } = require('../src/core/pipeline');
 
 function parseArgs(argv) {
-  const args = { in: [], out: process.cwd(), title: '', team: '', url: '', accent: '', only: '' };
+  const args = { in: [], out: process.cwd(), title: '', team: '', url: '', accent: '', only: '', genre: 'fantasy' };
   for (let i = 2; i < argv.length; i += 1) {
     const a = argv[i];
     const next = () => argv[(i += 1)];
@@ -23,6 +23,7 @@ function parseArgs(argv) {
     else if (a === '--team') args.team = next();
     else if (a === '--url') args.url = next();
     else if (a === '--accent') args.accent = next();
+    else if (a === '--genre') args.genre = next();
     else if (a === '--only') args.only = next();
   }
   return args;
@@ -75,7 +76,7 @@ function bar(p) {
         team: args.team || 'Дом Некроманта',
         teamUrl: args.url || 'https://ranobelib.me/ru/team/11969--dom-nekromanta',
       },
-      style: args.accent ? { accent: args.accent } : {},
+      style: { genre: args.genre, ...(args.accent ? { accent: args.accent } : {}) },
       outDir: path.resolve(args.out),
       formats: { pdf: args.only !== 'epub', epub: args.only !== 'pdf' },
     },

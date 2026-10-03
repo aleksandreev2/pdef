@@ -452,6 +452,7 @@ async function applyAccentFromCover(silent) {
     const hex = await accentFromImage(state.coverDataUrl);
     if (hex) {
       $('styleAccent').value = hex;
+      $('styleAccent').dispatchEvent(new Event('input'));
       log(`Акцентный цвет из обложки: ${hex}`);
     } else if (!silent) {
       log('В обложке не нашлось спокойного цвета — оставлен текущий акцент');
@@ -466,6 +467,7 @@ async function applyAccentFromCover(silent) {
 function collectStyle() {
   const side = Number($('styleSide').value);
   return {
+    genre: $('styleGenre').value,
     accent: $('styleAccent').value.toUpperCase(),
     serif: $('styleSerif').value,
     sans: $('styleSans').value,
@@ -614,6 +616,7 @@ function renderReport(report) {
   parts.push('</div>');
 
   parts.push('<h3>Оформление</h3><div class="stat-grid">');
+  parts.push(stat('Жанр', report.style.genreName, true));
   parts.push(stat('Основной шрифт', report.style.serif, true));
   parts.push(stat('Служебный шрифт', report.style.sans, true));
   parts.push(stat('Кегль', `${report.style.bodySize} pt`, true));
@@ -621,7 +624,7 @@ function renderReport(report) {
   parts.push(
     stat('Акцент', `<span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${report.style.accent};vertical-align:middle"></span> ${report.style.accent}`, true),
   );
-  parts.push(stat('BOOK SIGNATURE', report.style.signature ? 'да' : 'нет', true));
+  parts.push(stat('Жанровые орнаменты', report.style.signature ? 'да' : 'нет', true));
   parts.push('</div>');
 
   if (report.qa.pdf) parts.push(`<h3>PDF — структурная проверка</h3>${checkList(report.qa.pdf)}`);
@@ -697,6 +700,31 @@ function switchTab(name) {
 
 async function init() {
   const defaults = await api.styleDefaults();
+  for (const genre of defaults.genres) {
+    const option = document.createElement('option');
+    option.value = genre.id;
+    option.textContent = genre.name;
+    $('styleGenre').appendChild(option);
+  }
+  const updateGenrePreview = (resetColor = false) => {
+    const genre = defaults.genres.find(g => g.id === $('styleGenre').value) || defaults.genres[0];
+    if (resetColor) $('styleAccent').value = genre.accent;
+    const accent = $('styleAccent').value;
+    $('genreDescription').textContent = genre.description;
+    $('genreOpener').innerHTML = $('styleSignature').checked ? genre.opener : '';
+    $('genreDivider').innerHTML = genre.divider;
+    $('genrePreview').style.setProperty('--genre-accent', accent);
+    $('genrePreview').style.setProperty('--genre-bg', genre.systemBg);
+    $('genreNote').style.borderRadius = genre.panel === 'rounded' ? '6px' : '0';
+    document.querySelectorAll('#genrePreview svg path').forEach(p => {
+      p.setAttribute('stroke', accent);
+      if (p.getAttribute('fill') !== 'none') p.setAttribute('fill', accent);
+    });
+  };
+  $('styleGenre').addEventListener('change', () => updateGenrePreview(true));
+  $('styleAccent').addEventListener('input', () => updateGenrePreview());
+  $('styleSignature').addEventListener('change', () => updateGenrePreview());
+  updateGenrePreview(true);
 
   for (const [selectId, list] of [['styleSerif', defaults.families.serif], ['styleSans', defaults.families.sans]]) {
     const select = $(selectId);

@@ -1,7 +1,7 @@
 'use strict';
 
 const { FONT } = require('./typeset');
-const { drawOpenerMark, drawSceneBreak, drawSourceBreak } = require('../signature');
+const { drawOpenerMark, drawSceneBreak, drawPageFrame } = require('../signature');
 
 /**
  * Отрисовка подготовленных страниц.
@@ -52,7 +52,19 @@ function drawLine(doc, line, ox, y, size, color, ctx) {
     };
     if (seg.fmt.u) opts.underline = true;
     if (seg.fmt.link) opts.link = seg.fmt.link;
-    doc.text(text, ox + seg.words[0].x, y, opts);
+    let x = ox + seg.words[0].x;
+    for (const part of ctx.fontParts(text, seg.fontKey)) {
+      // PDFKit при wordSpacing обрезает крайние пробелы. Их ширину
+      // переносим в координаты, чтобы стык с дополнительным шрифтом не слипался.
+      const leading = (part.text.match(/^ +/) || [''])[0];
+      const drawText = part.text.trim();
+      const textWidth = ctx.measure(part.text, part.fontKey, size);
+      const startX = x + ctx.measure(leading, part.fontKey, size) + leading.length * wordSpacing;
+      doc.font(part.fontKey).fontSize(size).fillColor(color);
+      if (drawText) doc.text(drawText, startX, y, { ...opts,
+        textWidth: ctx.measure(drawText, part.fontKey, size), wordCount: drawText.split(/ +/).length });
+      x += textWidth + (part.text.match(/ /g) || []).length * wordSpacing;
+    }
   }
 }
 
@@ -76,7 +88,7 @@ function drawSystemPart(doc, part, ctx) {
 
   doc.save();
   // Светлый нейтральный фон и тонкая рамка; при переносе рамка не замыкается.
-  doc.roundedRect(x, part.y, w, boxH, part.continued || part.continuesOnNext ? 0 : 2.2)
+  doc.roundedRect(x, part.y, w, boxH, part.continued || part.continuesOnNext || style.panel !== 'rounded' ? 0 : 4)
     .fillColor(style.systemBg)
     .fill();
   doc.lineWidth(0.5).strokeColor(style.systemBorder);
@@ -88,6 +100,14 @@ function drawSystemPart(doc, part, ctx) {
   doc.moveTo(x + w, part.y).lineTo(x + w, part.y + boxH).stroke();
   if (!part.continuesOnNext) {
     doc.moveTo(x, part.y + boxH).lineTo(x + w, part.y + boxH).stroke();
+  }
+  doc.restore();
+
+  doc.save().strokeColor(style.accent).lineWidth(0.65);
+  if (style.panel === 'angular') {
+    doc.path(`M ${x} ${part.y+7} L ${x+7} ${part.y} L ${x+21} ${part.y} M ${x+w-21} ${part.y} L ${x+w-7} ${part.y} L ${x+w} ${part.y+7}`).stroke();
+  } else {
+    doc.path(`M ${x+5} ${part.y+4} L ${x+23} ${part.y+4} M ${x+w-23} ${part.y+4} L ${x+w-5} ${part.y+4}`).stroke();
   }
   doc.restore();
 
@@ -104,13 +124,15 @@ function drawOpenerPart(doc, part, ctx) {
   const { geom, style } = ctx;
   let y = part.y;
 
+  if (style.signature) {
+    y += drawOpenerMark(doc, geom.pageW / 2, y, geom.contentW, style.accent, style.genre) + 5;
+  }
+
   if (part.kicker) {
     doc.font(FONT.sansB).fontSize(style.kickerSize).fillColor(style.accent);
-    doc.text(part.kicker, geom.contentX, y, { lineBreak: false, characterSpacing: 0.9 });
-    y += style.kickerSize * 1.5;
-  }
-  if (style.signature) {
-    y += drawOpenerMark(doc, geom.contentX, y, style.accent) * 0.6;
+    const width = doc.widthOfString(part.kicker, { characterSpacing: 0.9 });
+    doc.text(part.kicker, (geom.pageW-width)/2, y, { lineBreak: false, characterSpacing: 0.9 });
+    y += style.kickerSize * 1.5 + 5;
   }
   for (const line of part.titleLines) {
     drawLine(doc, line, geom.contentX, y, style.chapterTitleSize, style.textColor, ctx);
@@ -121,11 +143,7 @@ function drawOpenerPart(doc, part, ctx) {
 function drawSepPart(doc, part, ctx) {
   const { geom, style } = ctx;
   const cx = geom.contentX + geom.contentW / 2;
-  if (part.fromSource && part.text) {
-    drawSourceBreak(doc, cx, part.y, part.text, style.accent, FONT.serif, style.bodySize);
-  } else {
-    drawSceneBreak(doc, cx, part.y, style.accent);
-  }
+  drawSceneBreak(doc, cx, part.y, style.accent, style.genre, Math.min(150, geom.contentW));
 }
 
 function drawImagePart(doc, part, ctx) {
@@ -150,6 +168,12 @@ function drawFolio(doc, pageNumber, ctx, page) {
   const label = String(pageNumber);
   const w = doc.widthOfString(label);
   doc.text(label, geom.contentX + (geom.contentW - w) / 2, y, { lineBreak: false });
+  if (style.signature) {
+    doc.save().lineWidth(0.45).strokeColor(style.accent);
+    const cx = geom.pageW / 2;
+    doc.path(`M ${cx-30} ${y+4} L ${cx-12} ${y+4} M ${cx+12} ${y+4} L ${cx+30} ${y+4}`).stroke();
+    doc.restore();
+  }
 
   if (style.folioBrand) {
     doc.fontSize(style.folioSize - 0.6).fillColor('#B4B4B4');
@@ -159,6 +183,7 @@ function drawFolio(doc, pageNumber, ctx, page) {
 }
 
 function renderPage(doc, page, pageNumber, ctx) {
+  if (!page.parts.some(p => p.t === 'image')) drawPageFrame(doc, ctx.geom, ctx.style);
   for (const part of page.parts) {
     switch (part.t) {
       case 'opener':

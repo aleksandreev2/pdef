@@ -110,7 +110,7 @@ ${lis}
   <nav epub:type="landmarks" id="landmarks" hidden="hidden">
     <h2>Ориентиры</h2>
     <ol>
-      <li><a epub:type="cover" href="text/cover.xhtml">Обложка</a></li>
+      ${book.cover ? '<li><a epub:type="cover" href="text/cover.xhtml">Обложка</a></li>' : ''}
       <li><a epub:type="titlepage" href="text/title.xhtml">Титульная страница</a></li>
       <li><a epub:type="bodymatter" href="${escAttr(entries.length ? entries[0].href : 'text/title.xhtml')}">Начало книги</a></li>
     </ol>
@@ -155,7 +155,7 @@ h1.chapter-title {
   line-height: 1.22;
   font-weight: 700;
   margin: 0 0 0.9em 0;
-  text-align: left;
+  text-align: center;
   page-break-after: avoid;
   break-after: avoid;
 }
@@ -168,11 +168,11 @@ p.kicker {
   color: ${style.accent};
   margin: 0 0 0.35em 0;
   text-indent: 0;
-  text-align: left;
+  text-align: center;
 }
 
-.opener-mark { margin: 0 0 0.9em 0; text-indent: 0; }
-.opener-mark svg { height: 0.8em; }
+.opener-mark { margin: 1em 0 0.8em; text-indent: 0; text-align: center; }
+.opener-mark svg { width: 100%; max-width: 20em; height: auto; }
 
 /* Системные окна, чаты, панели — отдельный структурный элемент. */
 .sysblock {
@@ -180,7 +180,8 @@ p.kicker {
   padding: 0.6em 0.75em;
   background: ${style.systemBg};
   border: 1px solid ${style.systemBorder};
-  border-radius: 3px;
+  border-radius: ${style.panel === 'rounded' ? '0.4em' : '0'};
+  border-left: 2px solid ${style.accent};
   font-family: "PT Sans", "Segoe UI", Arial, sans-serif;
   font-size: 0.9em;
   line-height: 1.38;
@@ -203,7 +204,7 @@ p.kicker {
   color: ${style.accent};
 }
 
-.scene svg { height: 0.7em; }
+.scene svg { width: 65%; max-width: 13em; height: auto; }
 
 figure {
   margin: 1.1em 0;
@@ -239,7 +240,7 @@ img {
 .titlepage { text-align: center; padding-top: 2.2em; }
 .titlepage h1 { font-size: 1.9em; line-height: 1.2; margin: 0 0 0.6em 0; }
 .titlepage .mark { margin: 0.8em 0 1.1em 0; }
-.titlepage .mark svg { height: 1.4em; }
+.titlepage .mark svg { width: 90%; max-width: 20em; height: auto; }
 .titlepage .edition {
   font-family: "PT Sans", "Segoe UI", Arial, sans-serif;
   font-weight: 700;
@@ -306,7 +307,7 @@ function coverXhtml(book, coverHref, coverAlt) {
 }
 
 function titleXhtml(book, style, counts) {
-  const mark = style.signature ? `    <div class="mark">${svgTitleMark(style.accent)}</div>\n` : '';
+  const mark = style.signature ? `    <div class="mark">${svgTitleMark(style.accent, style.genre)}</div>\n` : '';
   const body = [
     `    <h1>${esc(book.title)}</h1>`,
     mark.trimEnd(),
@@ -333,11 +334,11 @@ function aboutXhtml(book) {
 /** Блоки главы → XHTML. */
 function chapterBody(ch, style, hrefOfAsset) {
   const out = [];
+  if (style.signature) out.push(`    <p class="opener-mark">${svgTitleMark(style.accent, style.genre)}</p>`);
   const kicker = chapterKicker(ch);
   if (kicker) out.push(`    <p class="kicker">${esc(kicker)}</p>`);
   if (ch.title) out.push(`    <h1 class="chapter-title">${esc(ch.title)}</h1>`);
   else if (kicker) out.push(`    <h1 class="chapter-title">${esc(kicker)}</h1>`);
-  if (style.signature) out.push(`    <p class="opener-mark">${svgSceneBreak(style.accent)}</p>`);
 
   let firstPara = true;
   for (const block of ch.blocks) {
@@ -366,11 +367,7 @@ function chapterBody(ch, style, hrefOfAsset) {
         break;
       }
       case 'sep':
-        out.push(
-          block.text && !/^\s*$/.test(block.text)
-            ? `    <p class="scene">${esc(block.text)}</p>`
-            : `    <p class="scene">${svgSceneBreak(style.accent)}</p>`,
-        );
+        out.push(`    <p class="scene">${svgSceneBreak(style.accent, style.genre)}</p>`);
         firstPara = true;
         break;
       case 'image': {

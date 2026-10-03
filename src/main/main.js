@@ -5,6 +5,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron')
 
 const pipeline = require('../core/pipeline');
 const { DEFAULT_STYLE, LIMITS } = require('../core/style');
+const { GENRES } = require('../core/genres');
+const { svgTitleMark, svgSceneBreak } = require('../core/signature');
 const { availableFamilies, resolveFonts } = require('../core/fonts');
 
 let mainWindow = null;
@@ -94,6 +96,7 @@ ipcMain.handle('asset:dataUrl', async (_e, assetId) => pipeline.assetDataUrl(ass
 
 ipcMain.handle('style:defaults', async () => ({
   style: DEFAULT_STYLE,
+  genres: GENRES.map(g => ({ ...g, opener: svgTitleMark(g.accent, g.id), divider: svgSceneBreak(g.accent, g.id) })),
   limits: LIMITS,
   families: availableFamilies(),
   warnings: resolveFonts({}).warnings,

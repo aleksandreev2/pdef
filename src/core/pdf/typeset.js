@@ -29,8 +29,29 @@ function createMeasurer(doc, fonts) {
   doc.registerFont(FONT.sans, fonts.sans.regular);
   doc.registerFont(FONT.sansB, fonts.sans.bold);
   doc.registerFont(FONT.sansI, fonts.sans.italic);
+  if (fonts.fallback) doc.registerFont('fallback', fonts.fallback);
 
   const cache = new Map();
+  const coverage = new Map();
+  function supports(fontKey, char) {
+    const key = `${fontKey}|${char}`;
+    if (!coverage.has(key)) {
+      doc.font(fontKey);
+      coverage.set(key, !!doc._font.font && doc._font.font.hasGlyphForCodePoint(char.codePointAt(0)));
+    }
+    return coverage.get(key);
+  }
+  function parts(text, fontKey) {
+    if (!fonts.fallback || fontKey === 'fallback') return [{ text, fontKey }];
+    const out = [];
+    for (const char of text) {
+      const key = supports(fontKey, char) || !supports('fallback', char) ? fontKey : 'fallback';
+      const last = out[out.length-1];
+      if (last && last.fontKey === key) last.text += char;
+      else out.push({ text: char, fontKey: key });
+    }
+    return out;
+  }
 
   /** Ширина строки в pt для заданного начертания и кегля. */
   function width(text, fontKey, size) {
@@ -38,14 +59,17 @@ function createMeasurer(doc, fonts) {
     const key = `${fontKey}\u0000${size}\u0000${text}`;
     const hit = cache.get(key);
     if (hit !== undefined) return hit;
-    doc.font(fontKey).fontSize(size);
-    const w = doc.widthOfString(text);
+    let w = 0;
+    for (const part of parts(text, fontKey)) {
+      doc.font(part.fontKey).fontSize(size);
+      w += doc.widthOfString(part.text);
+    }
     // Кэшируем только короткие строки: длинные уникальны и лишь едят память.
     if (text.length <= 48) cache.set(key, w);
     return w;
   }
 
-  return { width, cache };
+  return { width, cache, parts };
 }
 
 /** Начертание по форматированию run'а. */

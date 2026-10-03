@@ -83,6 +83,18 @@
 
     <section class="card">
       <h2>4. Оформление</h2>
+      <label>Жанр книги
+        <select id="styleGenre"></select>
+      </label>
+      <p id="genreDescription" class="muted small"></p>
+      <div id="genrePreview" class="genre-preview" aria-label="Образец оформления">
+        <div id="genreOpener"></div>
+        <div class="genre-kicker">ГЛАВА 1</div>
+        <div class="genre-title">Начало пути</div>
+        <p>За окном медленно светало. Он прислушался к тишине.</p>
+        <div id="genreDivider"></div>
+        <div id="genreNote" class="genre-note">Открыта новая глава.</div>
+      </div>
       <label class="inline-between">Акцентный цвет
         <span class="accent-group">
           <input id="styleAccent" type="color" value="#6E5A7B"/>
@@ -115,7 +127,7 @@
       <div class="checks">
         <label class="inline"><input id="styleJustify" type="checkbox" checked/><span>Выключка по формату</span></label>
         <label class="inline"><input id="styleHyphen" type="checkbox" checked/><span>Переносы по слогам</span></label>
-        <label class="inline"><input id="styleSignature" type="checkbox" checked/><span>BOOK SIGNATURE</span></label>
+        <label class="inline"><input id="styleSignature" type="checkbox" checked/><span>Жанровые орнаменты</span></label>
         <label class="inline"><input id="styleWidow" type="checkbox" checked/><span>Контроль сирот и вдов</span></label>
       </div>
     </section>

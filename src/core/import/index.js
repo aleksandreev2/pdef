@@ -186,16 +186,18 @@ async function importSources(inputPaths, opts = {}) {
     }
 
     const { blocks, droppedTitle, headingFromText } = buildBlocks(rawParas, section);
-    if (droppedTitle) issues.push('Повтор заголовка в первой строке убран');
+    if (droppedTitle) issues.push('Заголовок документа перенесён в название раздела');
 
-    /* Название из документа точнее, чем из имени файла: файловая система
-       заменяет «?», «:» и «*» на подчёркивание. Номер и порядок при этом
-       остаются за именем файла. */
-    if (headingFromText && headingFromText.title && headingFromText.title !== section.title) {
-      section.title = headingFromText.title;
-    }
-    if (section.number === null && headingFromText && headingFromText.number !== null) {
+    /* Явный заголовок документа задаёт номер и название главы.
+       Имя файла служит запасным источником; CH-индекс экспорта может
+       отличаться от номера главы, а пунктуация в имени теряется. */
+    if (headingFromText) {
+      if (section.number !== null && headingFromText.number !== null && section.number !== headingFromText.number) {
+        issues.push(`Номер в имени файла (${section.number}) отличается от заголовка (${headingFromText.number}); выбран номер из документа`);
+      }
+      if (headingFromText.title || section.number === null) section.title = headingFromText.title;
       section.number = headingFromText.number;
+      section.kind = headingFromText.kind;
     }
 
     const hasText = blocks.some((b) => b.type === 'para' || b.type === 'system' || b.type === 'list');
