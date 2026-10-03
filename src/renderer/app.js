@@ -802,6 +802,14 @@ async function init() {
     pushEdits();
   });
 
+  $('excludeAllBtn').addEventListener('click', () => {
+    if (!state.chapters.length) return;
+    for (const ch of state.chapters) ch.include = false;
+    renderChapters();
+    $('buildBtn').disabled = true;
+    pushEdits();
+  });
+
   $('resortBtn').addEventListener('click', async () => {
     state.order = [];
     const result = await api.applyEdits({
