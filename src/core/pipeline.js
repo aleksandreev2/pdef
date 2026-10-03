@@ -147,12 +147,23 @@ function applyEdits(edits = {}) {
 /* ───────────────────────────── имена файлов ───────────────────────────── */
 
 function sanitizeName(s) {
-  return String(s)
+  const name = String(s)
     .replace(/[\\/:*?"<>|]/g, '')
     .replace(/\s+/g, '_')
     .replace(/_{2,}/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 120);
+    .replace(/^_+|_+$/g, '');
+  return Array.from(name).slice(0, 120).join('');
+}
+
+/** Безопасное имя папки; пробелы в названии новеллы сохраняются. */
+function novelFolderName(title) {
+  let name = String(title || 'Книга')
+    .replace(/[\\/:*?"<>|\x00-\x1f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[.\s]+|[.\s]+$/g, '') || 'Книга';
+  name = Array.from(name).slice(0, 100).join('').replace(/[.\s]+$/g, '') || 'Книга';
+  name = name.replace(/^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?=\.|$)/i, '$1_');
+  return name;
 }
 
 /** `[Название_книги]_главы_[первая]-[последняя]` (п.12 спецификации). */
@@ -207,10 +218,11 @@ async function build(opts, onProgress = () => {}) {
   const active = book.chapters.filter((c) => c.include && c.blocks.length);
   if (!active.length) throw new Error('Нет ни одной главы для сборки');
 
-  await fs.mkdir(opts.outDir, { recursive: true });
+  const outDir = selected.length > 1 ? path.join(opts.outDir, novelFolderName(book.title)) : opts.outDir;
+  await fs.mkdir(outDir, { recursive: true });
   const base = outputBaseName(book);
-  const pdfPath = path.join(opts.outDir, `${base}.pdf`);
-  const epubPath = path.join(opts.outDir, `${base}.epub`);
+  const pdfPath = path.join(outDir, `${base}.pdf`);
+  const epubPath = path.join(outDir, `${base}.epub`);
 
   const wantPdf = formats.pdf;
   const wantEpub = formats.epub;
@@ -231,15 +243,15 @@ async function build(opts, onProgress = () => {}) {
         : Promise.resolve(null),
     );
     tasks.push(wantEpub || needKindle ? buildEpub({ book, style, outPath: kindleEpubPath, onProgress }) : Promise.resolve(null));
-    tasks.push(formats.fb2 ? buildFb2({book,style,outPath:path.join(opts.outDir,base+'.fb2'),onProgress}) : Promise.resolve(null));
-    tasks.push(formats.txt ? buildTxt({book,outPath:path.join(opts.outDir,base+'.txt'),onProgress}) : Promise.resolve(null));
+    tasks.push(formats.fb2 ? buildFb2({book,style,outPath:path.join(outDir,base+'.fb2'),onProgress}) : Promise.resolve(null));
+    tasks.push(formats.txt ? buildTxt({book,outPath:path.join(outDir,base+'.txt'),onProgress}) : Promise.resolve(null));
 
     const settled=await Promise.allSettled(tasks);
     const failure=settled.find(r=>r.status==='rejected');if(failure) throw failure.reason;
     const [pdfResult, epubResult, fb2Result, txtResult] = settled.map(r=>r.value);
     const extraResults={fb2:fb2Result,txt:txtResult};
     // Convert serially so long novels do not double Calibre's memory use.
-    for(const format of ['mobi','azw3']) if(formats[format]) extraResults[format]=await buildKindle({book,format,epubPath:kindleEpubPath,outPath:path.join(opts.outDir,base+'.'+format),converter,onProgress});
+    for(const format of ['mobi','azw3']) if(formats[format]) extraResults[format]=await buildKindle({book,format,epubPath:kindleEpubPath,outPath:path.join(outDir,base+'.'+format),converter,onProgress});
 
     /* ── QA: по одному проходу на формат, параллельно ── */
     onProgress({ phase: 'qa', label: 'Проверка готовых файлов' });
@@ -257,12 +269,13 @@ async function build(opts, onProgress = () => {}) {
     ]);
     const extraQa={};
     await Promise.all(Object.entries(extraResults).filter(([,r])=>r).map(async([format])=>{
-      extraQa[format]=await checkExport(path.join(opts.outDir,base+'.'+format),{book,format});
+      extraQa[format]=await checkExport(path.join(outDir,base+'.'+format),{book,format});
     }));
 
     const report = {
       title: book.title,
       base,
+      outDir,
       pdf: pdfResult && {
         path: pdfPath,
         pages: pdfResult.pages,
@@ -278,7 +291,7 @@ async function build(opts, onProgress = () => {}) {
         images: epubResult.images,
         warnings: epubResult.warnings,
       } : null,
-      ...Object.fromEntries(['fb2','mobi','azw3','txt'].map(format=>[format,extraResults[format] ? {path:path.join(opts.outDir,base+'.'+format),...extraResults[format]} : null])),
+      ...Object.fromEntries(['fb2','mobi','azw3','txt'].map(format=>[format,extraResults[format] ? {path:path.join(outDir,base+'.'+format),...extraResults[format]} : null])),
       stats: book.stats,
       audit: book.audit,
       style: {

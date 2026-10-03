@@ -55,6 +55,7 @@ function registerIpc(win) {
     ipcMain.handle(channel, async () => []);
   }
   ipcMain.handle('dialog:pickOutDir', async () => args.out);
+  ipcMain.handle('output:getDirectory', async () => null);
   ipcMain.handle('shell:reveal', async () => {});
   ipcMain.handle('shell:open', async () => null);
   ipcMain.handle('shell:openExternal', async () => {});

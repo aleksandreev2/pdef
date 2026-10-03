@@ -8,6 +8,9 @@ const { DEFAULT_STYLE, LIMITS } = require('../core/style');
 const { GENRES } = require('../core/genres');
 const { svgTitleMark, svgSceneBreak } = require('../core/signature');
 const { availableFamilies, resolveFonts } = require('../core/fonts');
+const { createOutputPreferences } = require('./output-preferences');
+
+const outputPreferences = () => createOutputPreferences(path.join(app.getPath('userData'), 'preferences.json'));
 
 let mainWindow = null;
 
@@ -70,11 +73,15 @@ ipcMain.handle('dialog:pickFolder', async () => {
 
 ipcMain.handle('dialog:pickOutDir', async () => {
   const res = await dialog.showOpenDialog(mainWindow, {
-    title: 'Куда сохранить готовые файлы',
+    title: 'Выберите постоянную папку экспорта',
+    defaultPath: await outputPreferences().get() || undefined,
     properties: ['openDirectory', 'createDirectory'],
   });
-  return res.canceled ? null : res.filePaths[0];
+  if (res.canceled) return null;
+  return outputPreferences().set(res.filePaths[0]);
 });
+
+ipcMain.handle('output:getDirectory', async () => outputPreferences().get());
 
 ipcMain.handle('dialog:pickCover', async () => {
   const res = await dialog.showOpenDialog(mainWindow, {

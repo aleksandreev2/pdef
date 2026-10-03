@@ -513,16 +513,30 @@ function updateOutNameHint() {
     ? `${base}_главы_${String(nums[0]).padStart(3, '0')}-${String(nums[nums.length - 1]).padStart(3, '0')}`
     : `${base}_полное_издание`;
   const selected=OUTPUT_FORMATS.filter(key=>formatInput(key).checked);
-  $('outNameHint').textContent = selected.length ? `Файлы: ${selected.map(key=>name+'.'+key).join(' · ')}` : 'Выберите хотя бы один формат';
+  const destination = selected.length > 1 ? 'В папке новеллы. ' : 'В выбранной папке. ';
+  $('outNameHint').textContent = selected.length ? `${destination}Файлы: ${selected.map(key=>name+'.'+key).join(' · ')}` : 'Выберите хотя бы один формат';
+}
+
+async function chooseOutputDirectory() {
+  try {
+    const dir = await api.pickOutDir();
+    if (!dir) return null;
+    state.outDir = dir;
+    $('outDirLabel').textContent = dir;
+    $('pickOutBtn').textContent = 'Изменить папку…';
+    updateOutNameHint();
+    return dir;
+  } catch (error) {
+    log(`ОШИБКА сохранения папки: ${error.message}`);
+    setStatus(`Не удалось запомнить папку: ${error.message}`);
+    return null;
+  }
 }
 
 async function runBuild() {
   if(!hasFormat()) {setStatus('Выберите хотя бы один формат для сохранения');return;}
   if (!state.outDir) {
-    const dir = await api.pickOutDir();
-    if (!dir) return;
-    state.outDir = dir;
-    $('outDirLabel').textContent = dir;
+    if (!await chooseOutputDirectory()) return;
   }
   if (!$('metaTitle').value.trim()) {
     setStatus('Впишите название книги');
@@ -556,6 +570,7 @@ async function runBuild() {
     const saved=OUTPUT_FORMATS.filter(key=>report[key]).map(key=>key.toUpperCase()).join(', ');
     setStatus(`Готово за ${secs} с · ${saved}`);
     log(`Готово за ${secs} с`);
+    log(`Папка экспорта: ${report.outDir}`);
 
     if (report.pdf) {
       $('previewRefresh').disabled = false;
@@ -711,6 +726,15 @@ function switchTab(name) {
 
 async function init() {
   const defaults = await api.styleDefaults();
+  try {
+    state.outDir = await api.outputDirectory();
+    if (state.outDir) {
+      $('outDirLabel').textContent = state.outDir;
+      $('pickOutBtn').textContent = 'Изменить папку…';
+    }
+  } catch (error) {
+    log(`Не удалось прочитать сохранённую папку: ${error.message}`);
+  }
   for (const genre of defaults.genres) {
     const option = document.createElement('option');
     option.value = genre.id;
@@ -771,13 +795,7 @@ async function init() {
     $('buildBtn').disabled = true;
   });
 
-  $('pickOutBtn').addEventListener('click', async () => {
-    const dir = await api.pickOutDir();
-    if (dir) {
-      state.outDir = dir;
-      $('outDirLabel').textContent = dir;
-    }
-  });
+  $('pickOutBtn').addEventListener('click', chooseOutputDirectory);
 
   $('pickCoverBtn').addEventListener('click', async () => {
     const file = await api.pickCover();

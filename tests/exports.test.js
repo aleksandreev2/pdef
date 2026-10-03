@@ -49,6 +49,40 @@ test('export with no selected formats fails before creating files',async t=>{
   await assert.rejects(build({meta:{},outDir:path.join(dir,'no-output'),formats:{pdf:false,epub:false,fb2:false,mobi:false,azw3:false,txt:false}}),/Выберите.*формат/i);
   await assert.rejects(fs.access(path.join(dir,'no-output')));
 });
+
+test('multiple formats go into a novel folder and a single format stays in the root',async t=>{
+  const dir=await fixture(t),root=path.join(dir,'permanent-output');
+  const multi=await build({meta:{title:'Сказ бессмертного'},outDir:root,formats:{pdf:false,epub:false,fb2:true,txt:true}});
+  assert.equal(path.dirname(multi.fb2.path),path.join(root,'Сказ бессмертного'));
+  assert.equal(path.dirname(multi.txt.path),path.join(root,'Сказ бессмертного'));
+  assert.equal(multi.outDir,path.join(root,'Сказ бессмертного'));
+  assert.equal((await fs.readdir(multi.outDir)).length,2);
+  const other=await build({meta:{title:'Другая новелла'},outDir:root,formats:{pdf:false,epub:false,fb2:true,txt:true}});
+  assert.equal(path.dirname(other.txt.path),path.join(root,'Другая новелла'));
+  const single=await build({meta:{title:'Одна книга'},outDir:root,formats:{pdf:false,epub:false,txt:true}});
+  assert.equal(path.dirname(single.txt.path),root);
+  assert.equal(single.outDir,root);
+  assert.ok((await fs.readFile(multi.txt.path,'utf8')).includes('Сказ бессмертного'));
+});
+
+test('novel folder names stay inside the output root and work on Windows',async t=>{
+  const dir=await fixture(t),root=path.join(dir,'permanent-output');
+  for(const [title,folder] of [['../Вечный: путь? .','Вечный путь'],['..','Книга'],['CON','CON_'],['CON.txt','CON_.txt'],['COM1.story','COM1_.story']]){
+    const report=await build({meta:{title},outDir:root,formats:{pdf:false,epub:false,fb2:true,txt:true}});
+    assert.equal(path.dirname(report.txt.path),path.join(root,folder));
+    assert.equal((await fs.readFile(report.txt.path,'utf8')).includes(title),true);
+  }
+});
+
+test('a long novel title with an emoji produces paths the report can open',async t=>{
+  const dir=await fixture(t),root=path.join(dir,'permanent-output');
+  for(const [title,folder] of [['A'.repeat(99)+'📚','A'.repeat(99)+'📚'],['A'.repeat(119)+'📚','A'.repeat(100)]]){
+    const report=await build({meta:{title},outDir:root,formats:{pdf:false,epub:false,fb2:true,txt:true}});
+    assert.equal(report.outDir,path.join(root,folder));
+    assert.doesNotThrow(()=>encodeURIComponent(report.txt.path));
+    await fs.access(report.txt.path);
+  }
+});
 test('Kindle export produces real MOBI and KF8 files, including when EPUB is unchecked',async t=>{
   const {findConverter}=require('../src/core/export/kindle');
   if(!await findConverter()) {t.skip('Calibre is not installed');return;}

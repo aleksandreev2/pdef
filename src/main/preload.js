@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   pickSources: () => ipcRenderer.invoke('dialog:pickSources'),
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   pickOutDir: () => ipcRenderer.invoke('dialog:pickOutDir'),
+  outputDirectory: () => ipcRenderer.invoke('output:getDirectory'),
   pickCover: () => ipcRenderer.invoke('dialog:pickCover'),
 
   analyze: (paths) => ipcRenderer.invoke('book:analyze', paths),
