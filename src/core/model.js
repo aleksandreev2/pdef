@@ -75,6 +75,7 @@ function makeChapter(init) {
     id: init.id,
     sourceFile: init.sourceFile || '',
     sourceName: init.sourceName || '',
+    ...(init.sourceGroup ? {sourceGroup:init.sourceGroup,sourceOrder:init.sourceOrder} : {}),
     kind: init.kind || KIND.CHAPTER,
     number: init.number === undefined ? null : init.number,
     title: init.title || '',

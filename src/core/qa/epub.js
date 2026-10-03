@@ -274,7 +274,8 @@ async function checkEpub(epubPath, { book, expected }) {
 
   /* ── язык и переводчик ── */
   const opfText = docSources.get(opfPath) || '';
-  checks.push(check('Язык книги — ru', /<dc:language>\s*ru\s*<\/dc:language>/.test(opfText)));
+  const language = book.language || 'ru';
+  checks.push(check(`Язык книги — ${language}`, new RegExp(`<dc:language>\\s*${escapeRe(language)}\\s*</dc:language>`).test(opfText)));
   checks.push(
     check(
       `Переводчик указан как ${book.team}`,

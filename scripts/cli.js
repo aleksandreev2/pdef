@@ -72,7 +72,7 @@ function bar(p) {
   const report = await build(
     {
       meta: {
-        title: args.title || 'Книга',
+        title: args.title || analysis.suggestedTitle || 'Книга',
         team: args.team || 'Дом Некроманта',
         teamUrl: args.url || 'https://ranobelib.me/ru/team/11969--dom-nekromanta',
       },

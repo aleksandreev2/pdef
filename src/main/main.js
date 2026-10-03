@@ -49,9 +49,10 @@ ipcMain.handle('dialog:pickSources', async () => {
     title: 'Выберите главы, папку или архив',
     properties: ['openFile', 'multiSelections'],
     filters: [
-      { name: 'Главы и архивы', extensions: ['txt', 'docx', 'zip'] },
+      { name: 'Главы, книги и архивы', extensions: ['txt', 'docx', 'gdocx', 'docm', 'fb2', 'mobi', 'azw3', 'zip'] },
+      { name: 'Электронные книги', extensions: ['fb2', 'mobi', 'azw3'] },
       { name: 'Текст', extensions: ['txt'] },
-      { name: 'Документы Word и Google Docs', extensions: ['docx'] },
+      { name: 'Документы Word и Google Docs', extensions: ['docx', 'gdocx', 'docm'] },
       { name: 'Архивы', extensions: ['zip'] },
       { name: 'Все файлы', extensions: ['*'] },
     ],

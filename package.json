@@ -2,7 +2,7 @@
   "name": "pdfmaker-mobile",
   "productName": "PDFMaker Mobile",
   "version": "3.0.0",
-  "description": "Сборка мобильных PDF и EPUB 3 из отдельных глав (txt/docx/gdocx)",
+  "description": "Сборка мобильных PDF и EPUB 3 из TXT, DOCX, FB2, MOBI и AZW3",
   "main": "src/main/main.js",
   "author": "Дом Некроманта",
   "license": "MIT",
@@ -15,7 +15,9 @@
     "pack": "node scripts/pack.js"
   },
   "dependencies": {
+    "@lingo-reader/mobi-parser": "0.4.6",
     "fast-xml-parser": "^4.5.3",
+    "htmlparser2": "9.1.0",
     "iconv-lite": "^0.6.3",
     "jschardet": "^3.1.4",
     "jszip": "^3.10.1",

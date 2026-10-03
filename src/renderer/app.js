@@ -97,6 +97,7 @@ async function runAnalysis() {
   log(`Разбор: ${state.sources.length} ${plural(state.sources.length, 'источник', 'источника', 'источников')}`);
   try {
     const result = await api.analyze(state.sources);
+    if (result.suggestedTitle && !$('metaTitle').value.trim()) $('metaTitle').value = result.suggestedTitle;
     state.chapters = result.summary.chapters;
     state.order = state.chapters.map((c) => c.id);
     state.audit = result.audit;

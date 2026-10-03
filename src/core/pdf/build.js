@@ -46,7 +46,7 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
     displayTitle: true,
     info: {
       Title: book.title,
-      Author: book.team,
+      Author: book.author || book.team,
       Subject: `${book.title} — ${book.subtitle}`,
       Keywords: `${book.title}, ${book.team}, ранобэ, перевод`,
       Creator: 'PDFMaker Mobile v3',

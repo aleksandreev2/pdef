@@ -39,7 +39,7 @@ const session = {
 async function analyze(paths, onProgress = () => {}) {
   onProgress({ phase: 'import', label: 'Чтение исходников' });
 
-  const { chapters, assets, loose, warnings } = await importSources(paths, {
+  const { chapters, assets, loose, warnings, title, author, language } = await importSources(paths, {
     onProgress: ({ done, total, label }) =>
       onProgress({ phase: 'import', label: `Разбор: ${label}`, done, total }),
   });
@@ -51,6 +51,9 @@ async function analyze(paths, onProgress = () => {}) {
   const stats = computeStats(chapters);
 
   const book = makeBook();
+  if (title) book.title = title;
+  if (author) book.author = author;
+  if (/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/i.test(language || '')) book.language = language;
   book.chapters = chapters;
   book.assets = assets;
   book.audit = audit;
@@ -72,6 +75,7 @@ async function analyze(paths, onProgress = () => {}) {
 
   return {
     summary: summarize(book),
+    suggestedTitle: title || '',
     audit,
     stats,
     warnings,
@@ -178,7 +182,7 @@ async function build(opts, onProgress = () => {}) {
     subtitle: opts.meta.subtitle || 'Полное издание',
     team: opts.meta.team || book.team,
     teamUrl: opts.meta.teamUrl || book.teamUrl,
-    language: opts.meta.language || 'ru',
+    language: opts.meta.language || book.language || 'ru',
   });
 
   const style = clampStyle(opts.style);
