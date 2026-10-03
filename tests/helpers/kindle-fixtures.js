@@ -25,7 +25,8 @@ function pack(records) {
 function kindleFixture(htmlSections, opts = {}) {
   const kf8 = opts.kf8 || false;
   const chunks = htmlSections.map(s => Buffer.from(`<html><head>${opts.head || ''}</head><body>${s}</body></html>`, 'utf8'));
-  const text = kf8 ? Buffer.concat(chunks) : Buffer.from(`<html><head></head><body>${htmlSections.join('<mbp:pagebreak/>')}</body></html>`, 'utf8');
+  const flows = (opts.flows || []).map(s=>Buffer.from(s,'utf8'));
+  const text = kf8 ? Buffer.concat([...chunks,...flows]) : Buffer.from(`<html><head></head><body>${htmlSections.join('<mbp:pagebreak/>')}</body></html>`, 'utf8');
   const title = Buffer.from(opts.title || 'Тестовая книга', 'utf8');
   const metadata = [u32(503), u32(8 + title.length), title]; let metadataCount=1;
   for(const [type,value] of [[100,opts.author],[524,opts.language]]) if(value) { const data=Buffer.from(value,'utf8'); metadata.push(u32(type),u32(8+data.length),data); metadataCount++; }
@@ -41,7 +42,9 @@ function kindleFixture(htmlSections, opts = {}) {
   const records = [Buffer.concat([first, exth, title]), packedText];
   if (kf8) {
     first.writeUInt32BE(2, 192); first.writeUInt32BE(1, 196); first.writeUInt32BE(5, 248); first.writeUInt32BE(3, 252);
-    const fdst = Buffer.concat([Buffer.from('FDST'), u32(12), u32(1), u32(0), u32(text.length)]);
+    const lengths=[Buffer.concat(chunks).length,...flows.map(f=>f.length)];let at=0;
+    const ranges=lengths.flatMap(length=>{const start=at;at+=length;return [u32(start),u32(at)];});
+    const fdst = Buffer.concat([Buffer.from('FDST'), u32(12), u32(lengths.length), ...ranges]);
     const frag = Buffer.concat([indexHeader(0), Buffer.from('TAGX'), u32(12), u32(1)]);
     records[0] = Buffer.concat([first, exth, title]); records.push(fdst, ...skelIndex(chunks), frag);
   }

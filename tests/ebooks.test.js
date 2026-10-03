@@ -52,6 +52,30 @@ test('KF8 imports body text when its header has ordinary stylesheet links', asyn
   assert.equal(book.chapters[0].title,'Начало');
   assert.ok(book.chapters[0].blocks.map(blockText).join(' ').includes('Обычный текст.'));
 });
+
+test('KF8 resolves base32 SVG flows with letter IDs and IDs beyond 31 without recursion', async t => {
+  const flows=Array(32).fill('<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0L1 1"/></svg>');
+  const wrapper='<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><image xlink:href="kindle:embed:0001?mime=image/png"/></svg>';
+  flows[9]=wrapper;flows[31]=wrapper;
+  const book=await read(t,'many-resources.azw3',kindleFixture(['<h2>Глава 1. Начало</h2><p>Текст после проверки.</p><img src="kindle:flow:000A?mime=image/svg+xml"/><img src="kindle:flow:0010?mime=image/svg+xml"/>'],{kf8:true,flows,images:[Buffer.from(pixel,'base64')]}));
+  assert.equal(book.chapters[0].include,true);
+  assert.equal(book.chapters[0].blocks.filter(b=>b.type==='image').length,2);
+  assert.ok(book.chapters[0].blocks.map(blockText).join(' ').includes('Текст после проверки.'));
+});
+
+test('KF8 embedded images beyond record 31 use base32 IDs', async t => {
+  const images=Array(32).fill(Buffer.from('not an image'));images[31]=Buffer.from(pixel,'base64');
+  const book=await read(t,'many-images.azw3',kindleFixture(['<h2>Глава 1. Начало</h2><p>Сохраняем иллюстрацию.</p><img src="kindle:embed:0010?mime=image/png"/>'],{kf8:true,images}));
+  assert.equal(book.chapters[0].include,true);
+  const image=book.chapters[0].blocks.find(b=>b.type==='image');assert.ok(image);
+  assert.deepEqual(book.assets.get(image.assetId).data,Buffer.from(pixel,'base64'));
+});
+
+test('KF8 cyclic resources are rejected before overflowing the stack', async t => {
+  const book=await read(t,'cycle.azw3',kindleFixture(['<p>Текст.</p><img src="kindle:flow:0001?mime=image/svg+xml"/>'],{kf8:true,flows:['<svg><image href="kindle:flow:0001?mime=image/svg+xml"/></svg>']}));
+  assert.equal(book.chapters[0].include,false);
+  assert.ok(book.chapters[0].issues.some(s=>/циклическ/i.test(s)));
+});
 test('ZIP collects all four requested formats', async t => {
   const zip = new JSZip(); zip.file('book.fb2',fb2); zip.file('book.mobi',kindleFixture(['<h2>Глава 4. MOBI</h2><p>Четвёртая глава.</p>'])); zip.file('book.azw3',kindleFixture(['<h2>Глава 5. AZW3</h2><p>Пятая глава.</p>'],{kf8:true})); zip.file('006.txt','Глава 6. TXT\n\nШестая глава.');
   const book = await read(t,'books.zip',await zip.generateAsync({type:'nodebuffer'}));

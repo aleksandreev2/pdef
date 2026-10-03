@@ -3,6 +3,7 @@ const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
 const { parseHtml, splitHtmlSections } = require('./html');
+const { fixKf8Resources } = require('./kf8-resources');
 
 function inspectKindle(buffer) {
   if (buffer.length<86 || buffer.toString('ascii',60,68)!=='BOOKMOBI') throw new Error('Файл не является книгой MOBI/AZW3');
@@ -84,6 +85,7 @@ async function parseKindle(buffer, addAsset) {
     // Our own book styles replace source CSS, so omit links before that parser
     // step. Keep its XHTML reconstruction and embedded-image extraction.
     if (info.kf8) {
+      fixKf8Resources(book, temp);
       const replace = book.replace.bind(book);
       book.replace = html => replace(html.replace(/<link\b[^>]*>/gi,''));
     } else {
