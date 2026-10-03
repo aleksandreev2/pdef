@@ -17,14 +17,14 @@ function context(signature = true) {
   const m = createMeasurer(doc, resolveFonts(style));
   return {style, geom: geometry(style), measure: m.width, assets: new Map()};
 }
-test('decorated note reserves its icon column, including every continued page', () => {
+test('clean note uses its full inner width, including every continued page', () => {
   const ctx = context();
   const chapter = {id:'one', kind:'chapter', number:1, title:'Начало', blocks:[{
     type:'system', lines:Array.from({length:150}, (_,i) => [{text:`Строка ${i}: открыта новая глава и начинается путешествие.`}]),
   }]};
   const items = buildChapterFlow(chapter,ctx);
   const panel = items.find(i=>i.t==='system');
-  assert.ok(panel.iconColumn >= 30);
+  assert.equal(panel.iconColumn,0);
   assert.ok(Math.abs(panel.inner + panel.iconColumn + panel.pad*2 - ctx.geom.contentW) < 0.001);
   const {pages} = paginate([{chapter, items}],ctx);
   assert.ok(pages.length > 3);
@@ -45,10 +45,12 @@ test('turning ornaments off removes icon space and SVG decoration from EPUB', ()
   assert.ok(!html.includes('<svg'));
   assert.ok(html.includes('Запись'));
 });
-test('decorated EPUB preserves text, alignment and an accessible note with its genre icon', () => {
+test('EPUB preserves text and alignment without system icons or page corner decorations', () => {
   const chapter={id:'one',kind:'chapter',number:1,title:'Начало',blocks:[{type:'para',align:'center',runs:[{text:'Новая история.'}]},{type:'system',lines:[[{text:'Запись',b:true}],[{text:'Открыта глава.'}]]}]};
   const html=chapterXhtml({language:'ru'},chapter,context().style,()=>null);
-  assert.ok(html.includes('class="system-icon"'));
+  assert.ok(!html.includes('system-icon'));
+  assert.ok(!html.includes('panel-corner'));
+  assert.ok(!html.includes('chapter-corner'));
   assert.ok(html.includes('role="note"'));
   assert.ok(html.includes('text-align:center'));
   assert.ok(html.includes('Открыта глава.'));

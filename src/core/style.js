@@ -27,7 +27,7 @@ const DEFAULT_STYLE = {
   sans: 'auto', // служебный (PT Sans или совместимый sans-serif)
 
   // Более крупный текст на мобильной странице, как в выбранном образце.
-  bodySize: 14,
+  bodySize: 13,
   lineHeight: 1.36,
   paragraphIndentMm: 4.5,
   justify: true,
@@ -42,7 +42,7 @@ const DEFAULT_STYLE = {
   openerGapMm: 11,
 
   // Декоративные записи — serif, обычные панели — служебный шрифт.
-  systemSize: 12,
+  systemSize: 11.5,
   systemLineHeight: 1.4,
   systemPadMm: 4,
   systemBg: '#F4F2F6',

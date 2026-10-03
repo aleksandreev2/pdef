@@ -1,7 +1,7 @@
 'use strict';
 
 const { chapterLabel, chapterKicker } = require('../model');
-const { svgTitleMark, svgSceneBreak, svgSystemIcon, svgPanelCorner } = require('../signature');
+const { svgTitleMark, svgSceneBreak } = require('../signature');
 
 /** Экранирование текста для XML. */
 function esc(s) {
@@ -181,7 +181,6 @@ p.kicker {
   background: ${style.systemBg};
   border: 1px solid ${style.systemBorder};
   border-radius: ${style.panel === 'rounded' ? '0.4em' : '0'};
-  border-left: 2px solid ${style.accent};
   font-family: "${style.signature ? 'PT Serif' : 'PT Sans'}", Georgia, serif;
   font-size: 0.9em;
   line-height: 1.38;
@@ -206,20 +205,8 @@ p.kicker {
 
 .scene svg { width: 100%; max-width: 22em; height: auto; }
 
-/* Рамка главы следует потоку EPUB; читалка сохраняет своё разбиение страниц. */
-.chapter.decorated { position: relative; padding: 0.8em 1.2em 1.6em; border-left: 1px solid ${style.systemBorder}; border-right: 1px solid ${style.systemBorder}; }
-.chapter-corner { position: absolute; width: 1.6em; height: 1.6em; }
-.chapter-corner svg, .panel-corner svg { width: 100%; height: 100%; }
-.corner-tl { left: 0; top: 0; }
-.corner-tr { right: 0; top: 0; transform: scaleX(-1); }
-.corner-bl { left: 0; bottom: 0; transform: scaleY(-1); }
-.corner-br { right: 0; bottom: 0; transform: scale(-1); }
 .kicker-rule { width: 35%; height: 0; margin: 0.6em auto 1em; border-top: 1px solid ${style.accent}; }
-.decorated .sysblock { position: relative; border: 1px solid ${style.accent}; border-left-width: 1px; padding: 0.9em 0.9em 0.9em 3.9em; }
-.system-icon { position: absolute; left: 0.75em; top: 0.85em; width: 2.35em; height: 2.35em; }
-.system-icon svg { width: 100%; height: 100%; }
 .sysblock p:first-of-type strong { color: ${style.accent}; }
-.panel-corner { position: absolute; width: 0.9em; height: 0.9em; }
 
 figure {
   margin: 1.1em 0;
@@ -349,7 +336,6 @@ function aboutXhtml(book) {
 /** Блоки главы → XHTML. */
 function chapterBody(ch, style, hrefOfAsset) {
   const out = [];
-  if (style.signature) for(const corner of ['tl','tr','bl','br']) out.push(`<span class="chapter-corner corner-${corner}">${svgPanelCorner(style.accent,style.genre)}</span>`);
   if (style.signature) out.push(`    <p class="opener-mark">${svgTitleMark(style.accent, style.genre)}</p>`);
   const kicker = chapterKicker(ch);
   if (kicker) out.push(`    <p class="kicker">${esc(kicker)}</p>`);
@@ -373,8 +359,7 @@ function chapterBody(ch, style, hrefOfAsset) {
         break;
       case 'system': {
         const lines = block.lines.map((runs) => `      <p>${runsToHtml(runs)}</p>`).join('\n');
-        const decoration = style.signature ? `<span class="system-icon">${svgSystemIcon(style.accent,style.genre)}</span>` + ['tl','tr','bl','br'].map(c=>`<span class="panel-corner corner-${c}">${svgPanelCorner(style.accent,style.genre)}</span>`).join('') : '';
-        out.push(`    <div class="sysblock" role="note">${decoration}\n${lines}\n    </div>`);
+        out.push(`    <div class="sysblock" role="note">\n${lines}\n    </div>`);
         firstPara = true;
         break;
       }

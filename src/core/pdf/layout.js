@@ -103,7 +103,7 @@ function buildChapterFlow(ch, ctx) {
         const size = style.systemSize;
         const step = size * style.systemLineHeight;
         const pad = mm(style.systemPadMm);
-        const iconColumn = style.signature ? 38 : 0;
+        const iconColumn = 0;
         const inner = geom.contentW - pad * 2 - iconColumn;
         const laid = [];
         for (const runs of block.lines) {

@@ -1,7 +1,7 @@
 'use strict';
 
 const { FONT } = require('./typeset');
-const { drawOpenerMark, drawSceneBreak, drawPageFrame, drawArtwork, drawKickerRule, drawSystemDecoration } = require('../signature');
+const { drawOpenerMark, drawSceneBreak, drawArtwork, drawKickerRule, drawSystemDecoration } = require('../signature');
 
 /**
  * Отрисовка подготовленных страниц.
@@ -87,18 +87,10 @@ function drawSystemPart(doc, part, ctx) {
   const w = geom.contentW;
 
   doc.save();
-  const radius = style.panel === 'rounded' ? 4 : 0;
+  const radius = !part.continued && !part.continuesOnNext && style.panel === 'rounded' ? 3 : 0;
   doc.roundedRect(x, part.y, w, boxH, radius).fillColor(style.systemBg).fill();
   doc.restore();
-  if (style.signature) {
-    drawSystemDecoration(doc,x,part.y,w,boxH,style,part);
-    if (!part.continued) {
-      const size = Math.min(33,boxH-8);
-      drawArtwork(doc,'icon',x+part.pad+1,part.y+(boxH-size)/2,size,size,style.accent,style.genre);
-    }
-  } else {
-    doc.save().lineWidth(.5).strokeColor(style.systemBorder).rect(x,part.y,w,boxH).stroke().restore();
-  }
+  drawSystemDecoration(doc,x,part.y,w,boxH,style,part);
 
   let y = part.y + topPad;
   for (const line of part.lines) {
@@ -177,8 +169,6 @@ function drawFolio(doc, pageNumber, ctx, page) {
 function renderPage(doc, page, pageNumber, ctx) {
   if (!page.parts.some(p => p.t === 'image')) {
     if (ctx.style.signature) doc.rect(0,0,ctx.geom.pageW,ctx.geom.pageH).fillColor('#FFFCF6').fill();
-    const firstBody=page.parts.find(p=>p.t!=='opener');
-    drawPageFrame(doc, ctx.geom, ctx.style,{opening:page.parts.some(p=>p.t==='opener'&&!p.continued),bodyTop:firstBody?firstBody.y:ctx.geom.contentBottom});
   }
   for (const part of page.parts) {
     switch (part.t) {

@@ -752,13 +752,14 @@ async function init() {
     $('genreDescription').textContent = genre.description;
     const decorated = $('styleSignature').checked;
     const colorize = svg => (svg || '').replaceAll(genre.accent, accent);
-    for(const [id,key] of [['genreOpener','opener'],['genreDivider','divider'],['genreFrame','frame'],['genreIcon','icon'],['genreFolio','folio']]) {
+    for(const [id,key] of [['genreOpener','opener'],['genreDivider','divider'],['genreFolio','folio']]) {
       $(id).innerHTML = decorated ? colorize(genre[key]) : '';
     }
-    $('genreNoteCorners').innerHTML = decorated ? ['tl','tr','bl','br'].map(c=>`<span class="genre-note-corner corner-${c}">${colorize(genre.corner)}</span>`).join('') : '';
+
     $('genrePreview').classList.toggle('plain',!decorated);
     $('genrePreview').style.setProperty('--genre-accent', accent);
     $('genrePreview').style.setProperty('--genre-bg', genre.systemBg);
+    $('genrePreview').style.setProperty('--genre-border', genre.systemBorder);
     $('genreNote').style.borderRadius = genre.panel === 'rounded' ? '6px' : '0';
   };
   $('styleGenre').addEventListener('change', () => updateGenrePreview(true));

@@ -58,25 +58,16 @@ function drawKickerRule(doc,cx,y,width,accent) {
   doc.restore();
 }
 function drawSystemDecoration(doc,x,y,w,h,style,{continued=false,continuesOnNext=false}={}) {
-  // Две тонкие рамки и собственные уголки жанра. На разрыве незамкнуты.
-  const angular=style.panel==='angular', cut=angular?6:3;
-  doc.save().lineWidth(.4).strokeColor(style.accent);
-  doc.moveTo(x,y+cut).lineTo(x,y+h-cut);
-  doc.moveTo(x+w,y+cut).lineTo(x+w,y+h-cut);
-  if(!continued) doc.moveTo(x,y+cut).lineTo(x+cut,y).lineTo(x+w-cut,y).lineTo(x+w,y+cut);
-  if(!continuesOnNext) doc.moveTo(x,y+h-cut).lineTo(x+cut,y+h).lineTo(x+w-cut,y+h).lineTo(x+w,y+h-cut);
-  doc.stroke();
-  doc.lineWidth(.2).strokeOpacity(.68);
-  doc.moveTo(x+3,y+7).lineTo(x+3,y+h-7).moveTo(x+w-3,y+7).lineTo(x+w-3,y+h-7);
-  if(!continued) doc.moveTo(x+9,y+3).lineTo(x+w-9,y+3);
-  if(!continuesOnNext) doc.moveTo(x+9,y+h-3).lineTo(x+w-9,y+h-3);
-  doc.stroke().restore();
-  const s=Math.min(12,h/3);
-  for(const [cx,cy,sx,sy,draw] of [[x,y,1,1,!continued],[x+w,y,-1,1,!continued],[x,y+h,1,-1,!continuesOnNext],[x+w,y+h,-1,-1,!continuesOnNext]]) {
-    if(!draw) continue;
-    doc.save().translate(cx,cy).scale(sx,sy);
-    drawArtwork(doc,'corner',0,0,s,s,style.accent,style.genre);
-    doc.restore();
+  // Чистый контур без орнаментов и двойных линий; длинная панель открыта на разрыве.
+  doc.save().lineWidth(.45).strokeColor(style.systemBorder);
+  if(!continued && !continuesOnNext) {
+    doc.roundedRect(x,y,w,h,style.panel==='rounded'?3:0).stroke();
+  } else {
+    doc.moveTo(x,y).lineTo(x,y+h).moveTo(x+w,y).lineTo(x+w,y+h);
+    if(!continued) doc.moveTo(x,y).lineTo(x+w,y);
+    if(!continuesOnNext) doc.moveTo(x,y+h).lineTo(x+w,y+h);
+    doc.stroke();
   }
+  doc.restore();
 }
 module.exports={drawTitleMark,drawOpenerMark,drawSceneBreak,drawPageFrame,drawArtwork,drawKickerRule,drawSystemDecoration,svgTitleMark,svgSceneBreak,svgPageFrame,svgSystemIcon,svgPanelCorner,svgFolio,openerHeight,sceneHeight};
