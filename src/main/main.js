@@ -107,6 +107,8 @@ ipcMain.handle('book:analyze', async (_e, paths) => {
 
 ipcMain.handle('book:applyEdits', async (_e, edits) => pipeline.applyEdits(edits));
 
+ipcMain.handle('book:previewFrontMatter', async (_e, opts) => require('../core/pdf/front-matter-preview').previewFrontMatter(opts));
+
 ipcMain.handle('book:build', async (_e, opts) => pipeline.build(opts, sendProgress));
 
 ipcMain.handle('asset:dataUrl', async (_e, assetId) => pipeline.assetDataUrl(assetId));

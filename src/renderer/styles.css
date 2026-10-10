@@ -449,3 +449,11 @@ td.col-title input:focus { background: var(--bg-input); border-color: var(--acce
 #genreFolio svg { height: 22px; }
 .genre-folio > span { position: relative; line-height: 22px; }
 .genre-preview.plain .genre-kicker-rule { display: none; }
+
+#manualLayout details { margin-top: 14px; }
+#manualLayout summary { cursor: pointer; margin-bottom: 12px; }
+#manualLayout input[type="number"] { width: 100%; }
+.layout-preview { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.layout-preview figure { margin: 0; min-width: 0; }
+.layout-preview img { display: block; width: 100%; height: auto; border: 1px solid #aaa; }
+.layout-preview figcaption { font-size: 12px; margin-top: 5px; }

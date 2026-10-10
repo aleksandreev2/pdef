@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('api', {
 
   analyze: (paths) => ipcRenderer.invoke('book:analyze', paths),
   applyEdits: (edits) => ipcRenderer.invoke('book:applyEdits', edits),
+  previewFrontMatter: (opts) => ipcRenderer.invoke('book:previewFrontMatter', opts),
   build: (opts) => ipcRenderer.invoke('book:build', opts),
 
   assetDataUrl: (assetId) => ipcRenderer.invoke('asset:dataUrl', assetId),

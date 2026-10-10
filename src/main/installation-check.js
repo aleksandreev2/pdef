@@ -38,7 +38,20 @@ async function runInstallationCheck(win, dir) {
   await win.webContents.executeJavaScript(`window.__pdfmaker.addSources([${JSON.stringify(input)}])`);
   await waitFor(win, 'window.__pdfmaker.state.chapters.length === 1');
   const defaults = await win.webContents.executeJavaScript('window.api.styleDefaults()');
-  assert.equal(defaults.genres.length, 10);
+  assert.equal(defaults.genres.length, 11);
+  await waitFor(win, "document.querySelectorAll('#layoutPreview img').length === 2", 90000);
+  const manual = await win.webContents.executeJavaScript(`
+    (() => {
+      const field = document.getElementById('manual_titleSize');
+      field.value = '30'; field.dispatchEvent(new Event('input', {bubbles: true}));
+      document.getElementById('layoutUndo').click();
+      const undo = field.value === '23';
+      field.value = '28'; field.dispatchEvent(new Event('input', {bubbles: true}));
+      document.getElementById('layoutReset').click();
+      return {undo, reset: field.value === '23', controls: document.querySelectorAll('#manualLayout input').length};
+    })()
+  `);
+  assert.deepEqual(manual, {undo: true, reset: true, controls: 11});
   await win.webContents.executeJavaScript(`
     document.getElementById('metaTitle').value = 'Проверка установки';
     window.__pdfmaker.state.outDir = ${JSON.stringify(dir)};

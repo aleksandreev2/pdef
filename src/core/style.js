@@ -12,6 +12,17 @@ const { genreProfile } = require('./genres');
  */
 const DEFAULT_STYLE = {
   genre: 'fantasy',
+  titleSize: 23,
+  titleTopMm: 14,
+  titleMarkWidthMm: 81,
+  titleGapMm: 4,
+  subtitleSize: 11,
+  creditSize: 10.5,
+  creditBottomMm: 14,
+  aboutTopMm: 18,
+  aboutTitleSize: 16,
+  aboutBodySize: 11,
+  aboutGapMm: 6,
   // Страница: 108 × 192 мм, вертикальная, 9:16
   pageWidthMm: 108,
   pageHeightMm: 192,
@@ -62,6 +73,17 @@ const DEFAULT_STYLE = {
 
 /** Диапазоны включают и прежний компактный стиль, и новое оформление. */
 const LIMITS = {
+  titleSize: [12,36],
+  titleTopMm: [0,60],
+  titleMarkWidthMm: [20,88],
+  titleGapMm: [0,20],
+  subtitleSize: [8,20],
+  creditSize: [8,16],
+  creditBottomMm: [0,60],
+  aboutTopMm: [0,60],
+  aboutTitleSize: [10,30],
+  aboutBodySize: [8,18],
+  aboutGapMm: [0,20],
   bodySize: [10, 18],
   lineHeight: [1.25, 1.6],
   marginLeftMm: [9, 11],

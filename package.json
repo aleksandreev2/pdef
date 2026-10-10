@@ -1,7 +1,7 @@
 {
   "name": "pdfmaker-mobile",
   "productName": "PDFMaker Mobile",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "Сборка PDF, EPUB, FB2, MOBI, AZW3 и TXT из отдельных глав",
   "main": "src/main/main.js",
   "author": "Дом Некроманта",
@@ -35,19 +35,38 @@
   "build": {
     "appId": "ru.domnekromanta.pdfmaker",
     "asar": true,
-    "asarUnpack": ["node_modules/@resvg/**/*", "node_modules/xmllint-wasm/**/*"],
+    "asarUnpack": [
+      "node_modules/@resvg/**/*",
+      "node_modules/xmllint-wasm/**/*"
+    ],
     "files": [
       "src/**/*",
       "assets/**/*",
       "package.json"
     ],
     "extraResources": [
-      { "from": "tools/calibre", "to": "calibre" },
-      { "from": "tools/licenses", "to": "licenses" },
-      { "from": "build/THIRD-PARTY-NOTICES.txt", "to": "licenses/THIRD-PARTY-NOTICES.txt" }
+      {
+        "from": "tools/calibre",
+        "to": "calibre"
+      },
+      {
+        "from": "tools/licenses",
+        "to": "licenses"
+      },
+      {
+        "from": "build/THIRD-PARTY-NOTICES.txt",
+        "to": "licenses/THIRD-PARTY-NOTICES.txt"
+      }
     ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "build/icon.ico",
       "artifactName": "PDFMaker-Mobile-${version}-Setup.${ext}"
     },
@@ -60,7 +79,9 @@
       "shortcutName": "PDFMaker Mobile",
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false,
-      "installerLanguages": ["ru_RU"],
+      "installerLanguages": [
+        "ru_RU"
+      ],
       "language": "1049"
     }
   },

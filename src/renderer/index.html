@@ -139,6 +139,15 @@
       </div>
     </section>
 
+    <section class="card" id="manualLayout">
+      <h2>Ручная настройка PDF</h2>
+      <p class="muted small">Титульная страница и страница «О переводе». Изменения сразу видны в образце ниже.</p>
+      <div class="row"><button id="layoutUndo" class="ghost small" disabled>Отменить</button><button id="layoutReset" class="ghost small">Сбросить</button></div>
+      <details open><summary>Титульная страница</summary><div id="titleControls" class="grid2"></div></details>
+      <details open><summary>О переводе</summary><div id="aboutControls" class="grid2"></div></details>
+      <p id="layoutPreviewStatus" class="muted small" role="status" aria-live="polite"></p>
+      <div id="layoutPreview" class="layout-preview"></div>
+    </section>
     <section class="card">
       <h2>5. Вывод</h2>
       <div class="row">

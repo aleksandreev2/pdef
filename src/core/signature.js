@@ -7,7 +7,7 @@ const geometric = require('./artwork/geometric');
 // Единственные координаты рисунков: PDF, электронные книги и UI используют
 // одинаковые SVG. Текст книги рисуется отдельно и остаётся выделяемым.
 const SIZES = {opener:[1000,280], divider:[1000,160], frame:[1000,1778], icon:[100,100], corner:[100,100], folio:[1000,100]};
-const ORGANIC = new Set(['fantasy','horror','romance','historical','cultivation']);
+const ORGANIC = new Set(['fantasy','horror','romance','historical','cultivation','erotica']);
 function svgArtwork(part, accent, genre) {
   const profile=genreProfile(genre), color=/^#[0-9a-f]{6}$/i.test(accent)?accent:profile.accent;
   const [w,h]=SIZES[part];

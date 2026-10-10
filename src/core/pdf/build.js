@@ -268,6 +268,25 @@ function drawCover(doc, book, geom, warnings, style) {
   }
 }
 
+function centeredLines(runs, family, size, geom, ctx) {
+  return layoutText(tokenize(runs, family), {
+    width: geom.contentW, size, firstIndent: 0, justify: false,
+    hyphenate: false, align: 'center', measure: ctx.measure,
+  });
+}
+
+function drawCenteredLines(doc, lines, y, size, color, ctx, linkColor = color) {
+  for (const line of lines) {
+    for (const linked of [false, true]) {
+      const items = line.items.filter(item => Boolean(item.fmt && item.fmt.link) === linked);
+      if (items.length) drawLine(doc, { ...line, items }, ctx.geom.contentX, y, size,
+        linked ? linkColor : color, ctx);
+    }
+    y += size * 1.45;
+  }
+  return y;
+}
+
 function drawTypographicCover(doc, book, geom, style, ctx) {
   doc.rect(0, 0, geom.pageW, geom.pageH).fillColor(style.coverBg).fill();
   drawPageFrame(doc, geom, { ...style, accent: '#CEBA93' });
@@ -286,21 +305,20 @@ function drawTypographicCover(doc, book, geom, style, ctx) {
     y += 30;
   }
   if (style.signature) drawTitleMark(doc, geom.pageW / 2, y + 14, geom.contentW, '#CEBA93', style.genre);
-  doc.font(FONT.sans).fontSize(10).fillColor('#B9B2C2');
-  const team = book.team;
-  const tw = doc.widthOfString(team);
-  doc.text(team, (geom.pageW - tw) / 2, geom.pageH * 0.84, { lineBreak: false });
+  const teamLines = centeredLines([{ text: book.team }], 'sans', 10, geom, ctx);
+  const teamY = Math.min(geom.pageH * 0.84, geom.contentBottom - teamLines.length * 14.5);
+  drawCenteredLines(doc, teamLines, teamY, 10, '#B9B2C2', ctx);
 }
 
 function drawTitlePage(doc, book, geom, style, ctx, sectionCount) {
   if(style.signature) doc.rect(0,0,geom.pageW,geom.pageH).fillColor('#FFFCF6').fill();
   drawPageFrame(doc, geom, style);
   const stats = book.stats || { words: 0 };
-  let y = geom.contentY + mm(14);
+  let y = geom.contentY + mm(style.titleTopMm);
 
   const titleLines = layoutText(tokenize([{ text: book.title }], 'serif'), {
     width: geom.contentW,
-    size: 23,
+    size: style.titleSize,
     firstIndent: 0,
     justify: false,
     hyphenate: false,
@@ -308,21 +326,19 @@ function drawTitlePage(doc, book, geom, style, ctx, sectionCount) {
     measure: ctx.measure,
   });
   for (const line of titleLines) {
-    drawLine(doc, line, geom.contentX, y, 23, style.textColor, ctx);
-    y += 27;
+    drawLine(doc, line, geom.contentX, y, style.titleSize, style.textColor, ctx);
+    y += style.titleSize * 1.18;
   }
 
   y += mm(3);
-  if (style.signature) y += drawTitleMark(doc, geom.pageW / 2, y, geom.contentW, style.accent, style.genre) + mm(4);
+  if (style.signature) y += drawTitleMark(doc, geom.pageW / 2, y, Math.min(geom.contentW, mm(style.titleMarkWidthMm)), style.accent, style.genre) + mm(style.titleGapMm);
 
   const center = (text, font, size, color, gapAfter) => {
-    doc.font(font).fontSize(size).fillColor(color);
-    const w = doc.widthOfString(text);
-    doc.text(text, geom.contentX + (geom.contentW - w) / 2, y, { lineBreak: false });
-    y += size * 1.35 + (gapAfter || 0);
+    const lines = centeredLines([{ text, b: font === FONT.sansB }], 'sans', size, geom, ctx);
+    y = drawCenteredLines(doc, lines, y, size, color, ctx) + (gapAfter || 0);
   };
 
-  center(book.subtitle || 'Полное издание', FONT.sansB, 11, style.accent, mm(5));
+  center(book.subtitle || 'Полное издание', FONT.sansB, style.subtitleSize, style.accent, mm(5));
 
   const chapterCount = book.stats ? book.stats.chapters : sectionCount;
   center(
@@ -342,24 +358,13 @@ function drawTitlePage(doc, book, geom, style, ctx, sectionCount) {
 
   /* Подпись переводчиков прижата к низу полосы — так титульная читается
      как разворот книги, а не как текст с пустой нижней половиной. */
-  y = geom.contentBottom - mm(14);
-
-  // Настоящая кликабельная ссылка на команду.
-  doc.font(FONT.serif).fontSize(10.5).fillColor(style.textColor);
-  const prefix = 'Перевод выполнен командой ';
-  const teamText = book.team;
-  const pw = doc.widthOfString(prefix);
-  doc.font(FONT.serifB);
-  const tw = doc.widthOfString(teamText);
-  const totalW = pw + tw;
-  let x = geom.contentX + (geom.contentW - totalW) / 2;
-
-  doc.font(FONT.serif).fontSize(10.5).fillColor(style.textColor);
-  doc.text(prefix, x, y, { lineBreak: false });
-  doc.font(FONT.serifB).fillColor(style.accent);
-  doc.text(teamText, x + pw, y, { lineBreak: false });
-  // Настоящая Link-аннотация с точными границами названия команды.
-  doc.link(x + pw, y - 1, tw, 12.5, book.teamUrl);
+  const creditLines = centeredLines([
+    { text: 'Перевод выполнен командой ' },
+    { text: book.team, b: true, link: book.teamUrl },
+  ], 'serif', style.creditSize, geom, ctx);
+  // Keep the final credit line at its original footer position.
+  y = geom.contentBottom - mm(style.creditBottomMm) - (creditLines.length - 1) * style.creditSize * 1.45;
+  drawCenteredLines(doc, creditLines, y, style.creditSize, style.textColor, ctx, style.accent);
 }
 
 function drawTocPage(doc, entries, opts) {
@@ -414,17 +419,14 @@ function drawTocPage(doc, entries, opts) {
 }
 
 function drawTranslationPage(doc, book, geom, style, ctx) {
-  let y = geom.contentY + mm(18);
+  let y = geom.contentY + mm(style.aboutTopMm);
 
-  doc.font(FONT.serifB).fontSize(16).fillColor(style.textColor);
-  const t = book.team;
-  const tw = doc.widthOfString(t);
-  doc.text(t, geom.contentX + (geom.contentW - tw) / 2, y, { lineBreak: false });
-  y += 16 * 1.4 + mm(3);
+  const teamLines = centeredLines([{ text: book.team, b: true }], 'serif', style.aboutTitleSize, geom, ctx);
+  y = drawCenteredLines(doc, teamLines, y, style.aboutTitleSize, style.textColor, ctx) + mm(3);
 
   doc.lineWidth(0.6).strokeColor(style.accent);
   doc.moveTo(geom.pageW / 2 - mm(9), y).lineTo(geom.pageW / 2 + mm(9), y).stroke();
-  y += mm(6);
+  y += mm(style.aboutGapMm);
 
   const para = (text, font, size, color) => {
     const lines = layoutText(tokenize([{ text }], font === FONT.sans ? 'sans' : 'serif'), {
@@ -442,7 +444,7 @@ function drawTranslationPage(doc, book, geom, style, ctx) {
     }
   };
 
-  para(`Перевод выполнен командой «${book.team}».`, FONT.serif, 11, style.textColor);
+  para(`Перевод выполнен командой «${book.team}».`, FONT.serif, style.aboutBodySize, style.textColor);
   y += mm(4);
   para('Официальная страница команды:', FONT.sans, 9.5, '#6B6872');
   y += mm(1);

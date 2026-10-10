@@ -1,5 +1,5 @@
 import { accentFromImage } from './accent.js';
-import { renderSample, forgetDocument } from './pdf-preview.js';
+import { renderSample, forgetDocument, renderFrontMatter } from './pdf-preview.js';
 
 const api = window.api;
 const $ = (id) => document.getElementById(id);
@@ -473,6 +473,7 @@ async function applyAccentFromCover(silent) {
 function collectStyle() {
   const side = Number($('styleSide').value);
   return {
+    ...collectManualLayout(),
     genre: $('styleGenre').value,
     accent: $('styleAccent').value.toUpperCase(),
     serif: $('styleSerif').value,
@@ -726,6 +727,7 @@ function switchTab(name) {
 
 async function init() {
   const defaults = await api.styleDefaults();
+  initManualLayout(defaults);
   for(const [id,key] of [['styleBody','bodySize'],['styleLead','lineHeight'],['styleSide','marginLeftMm'],['styleSys','systemSize']]) {
     const input=$(id), limits=defaults.limits[key];
     input.min=limits[0]; input.max=limits[1]; input.value=defaults.style[key];
@@ -896,8 +898,85 @@ async function init() {
   log('PDFMaker Mobile готов к работе');
 }
 
-init();
 
 /* Хук для автоматической проверки интерфейса (scripts/smoke.js).
    Боевой код им не пользуется. */
 window.__pdfmaker = { state, addSources, runBuild, showPreview, switchTab, renderChapters };
+
+/* Ручное оформление первых страниц: история и настоящий PDF-образец. */
+const manualFields = [
+  ['titleSize','Название, pt','titleControls'],
+  ['titleTopMm','Отступ сверху, мм','titleControls'],
+  ['titleMarkWidthMm','Ширина орнамента, мм','titleControls'],
+  ['titleGapMm','После орнамента, мм','titleControls'],
+  ['subtitleSize','Подзаголовок, pt','titleControls'],
+  ['creditSize','Подпись команды, pt','titleControls'],
+  ['creditBottomMm','Подпись от низа поля, мм','titleControls'],
+  ['aboutTopMm','Отступ сверху, мм','aboutControls'],
+  ['aboutTitleSize','Название команды, pt','aboutControls'],
+  ['aboutBodySize','Текст перевода, pt','aboutControls'],
+  ['aboutGapMm','После разделителя, мм','aboutControls'],
+];
+function collectManualLayout() {
+  return Object.fromEntries(manualFields.map(([key])=>[key,Number($('manual_'+key)?.value)]));
+}
+function initManualLayout(defaults) {
+  let current={}, history=[], timer, revision=0, running=false;
+  for(const [key,label,group] of manualFields) {
+    const wrapper=document.createElement('label'); wrapper.textContent=label;
+    const input=document.createElement('input'); input.type='number'; input.id='manual_'+key;
+    [input.min,input.max]=defaults.limits[key]; input.step='0.5'; input.value=defaults.style[key];
+    current[key]=defaults.style[key]; wrapper.append(input); $(group).append(wrapper);
+    input.addEventListener('input',()=>{
+      history.push({...current}); if(history.length>100) history.shift();
+      const value=Number(input.value);
+      current[key]=Math.min(Number(input.max),Math.max(Number(input.min),Number.isFinite(value)?value:defaults.style[key]));
+      $('layoutUndo').disabled=false; schedule();
+    });
+    input.addEventListener('change',()=>{input.value=current[key];});
+  }
+  function restore(values) {
+    current={...values};
+    for(const [key] of manualFields) $('manual_'+key).value=current[key];
+    $('layoutUndo').disabled=history.length===0; schedule();
+  }
+  $('layoutUndo').addEventListener('click',()=>{if(history.length) restore(history.pop());});
+  $('layoutReset').addEventListener('click',()=>{
+    history.push({...current}); restore(Object.fromEntries(manualFields.map(([key])=>[key,defaults.style[key]])));
+  });
+  function schedule() {
+    revision++; clearTimeout(timer); timer=setTimeout(update,450);
+    $('layoutPreviewStatus').textContent='Обновление образца…';
+  }
+  async function update() {
+    if(running) return;
+    running=true; const version=revision;
+    try {
+      const style={...defaults.style,...collectStyle()};
+      const meta={title:$('metaTitle').value,subtitle:$('metaSubtitle').value,team:$('metaTeam').value,teamUrl:$('metaUrl').value};
+      const selected=state.chapters.filter(c=>c.include);
+      const stats={chapters:selected.filter(c=>c.kind==='chapter').length,words:selected.reduce((sum,c)=>sum+(c.words||0),0)};
+      const data=await api.previewFrontMatter({meta,style,stats});
+      const result=await renderFrontMatter(data,style);
+      if(version!==revision) return;
+      $('layoutPreview').replaceChildren();
+      for(const page of result.pages) {
+        const fig=document.createElement('figure'),img=document.createElement('img'),cap=document.createElement('figcaption');
+        img.src=page.dataUrl; img.alt=page.label; cap.textContent=page.label;
+        fig.append(img,cap); $('layoutPreview').append(fig);
+      }
+      $('layoutPreviewStatus').textContent=result.warnings.length?result.warnings.join(' '):'Текст в пределах полей. Перекрытий текста не обнаружено.';
+    } catch(e) {
+      if(version===revision) $('layoutPreviewStatus').textContent=`Не удалось обновить образец: ${e.message}`;
+    } finally {
+      running=false; if(version!==revision) timer=setTimeout(update,100);
+    }
+  }
+  for(const id of ['metaTitle','metaSubtitle','metaTeam','metaUrl','styleGenre','styleAccent','styleSerif','styleSans','styleSide','styleSignature']) {
+    $(id).addEventListener('input',schedule); $(id).addEventListener('change',schedule);
+  }
+  $('chapterBody').addEventListener('change',schedule);
+  schedule();
+}
+
+init();

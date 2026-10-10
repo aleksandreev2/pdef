@@ -188,7 +188,39 @@ function cultivation(part) {
   return '';
 }
 
-const families = { fantasy, horror, romance, historical, cultivation };
+function ribbonKnot() {
+  return path('M0 0 C-72-64-128-43-113-8 C-96 26-35 25 0 0 C35-25 96-26 113 8 C128 43 72 64 0 0', 2.3) +
+    path('M0 0 C-64-46-108-34-98-9 C-84 14-34 16 0 0 C34-16 84-14 98 9 C108 34 64 46 0 0', 1) +
+    path('M-8 4 C-12 44-51 71-70 103 L-43 94-33 119 C-12 81 14 48 8 4 M-8-4 C12-44 51-71 70-103 L43-94 33-119 C12-81-14-48 8-4', 1.4) +
+    path('M-10-7 Q0-15 10-7 L10 7 Q0 15-10 7Z', 1.3, 'inherit', .22);
+}
+function lace(length) {
+  let drawing = path(`M0 0 H${length} M0 8 H${length}`, 1);
+  for (let x=0;x<length;x+=40) {
+    drawing += path(`M${x} 8 Q${x+20} 44 ${x+40} 8 M${x+6} 10 Q${x+20} 31 ${x+34} 10`, .9) +
+      circle(x+20,32,2.2,.7) + path(`M${x+16} 19 L${x+20} 14 ${x+24} 19 ${x+20} 24Z`, .65);
+  }
+  return drawing;
+}
+function laceCorner() {
+  return group('translate(6 6)',lace(80)) + group('translate(6 6) rotate(90) scale(1 -1)',lace(80)) +
+    group('translate(45 45) rotate(-45) scale(.23)',ribbonKnot());
+}
+function erotica(part) {
+  if(part==='opener') return group('translate(80 122)',lace(280)) + group('translate(920 122) scale(-1 1)',lace(280)) + group('translate(500 138) scale(.92)',ribbonKnot());
+  if(part==='divider') return group('translate(160 65)',lace(240)) + group('translate(840 65) scale(-1 1)',lace(240)) + group('translate(500 80) rotate(90) scale(.52)',ribbonKnot());
+  if(part==='corner') return laceCorner();
+  if(part==='icon') return group('translate(50 50) rotate(-35) scale(.29)',ribbonKnot());
+  if(part==='folio') return group('translate(280 30) scale(.85)',lace(160)) + group('translate(720 30) scale(-.85 .85)',lace(160));
+  if(part==='frame') return group('translate(20 20)',laceCorner()) + group('translate(980 20) scale(-1 1)',laceCorner()) +
+    group('translate(20 1758) scale(1 -1)',laceCorner()) + group('translate(980 1758) scale(-1 -1)',laceCorner()) +
+    group('translate(130 25)',lace(240)) + group('translate(870 25) scale(-1 1)',lace(240)) +
+    group('translate(25 180) rotate(90)',lace(1400)) + group('translate(975 180) rotate(90) scale(1 -1)',lace(1400)) +
+    path('M160 1750 H370 M630 1750 H840',1.1);
+  return '';
+}
+
+const families = { fantasy, horror, romance, historical, cultivation, erotica };
 function artwork(genre, part, accent = ink) {
   const family = families[genre];
   if (!family) return '';
