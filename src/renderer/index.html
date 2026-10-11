@@ -19,7 +19,7 @@
       <g fill="currentColor"><circle cx="8" cy="16" r="2"/><circle cx="112" cy="16" r="2"/></g>
     </svg>
     <div>
-      <h1>PDFMaker Mobile</h1>
+      <h1>PDFMaker Mobile <span id="appVersion" class="app-version"></span></h1>
       <p id="brandSub">PDF · EPUB · FB2 · MOBI · AZW3 · TXT из отдельных глав</p>
     </div>
   </div>
@@ -155,10 +155,29 @@
         <span id="outDirLabel" class="muted">не выбрана</span>
       </div>
       <p class="muted small">Папка запоминается. Несколько форматов сохраняются в отдельную папку с названием новеллы.</p>
+      <label>Версии книги
+        <select id="illustrationVersion">
+          <option value="with">С иллюстрациями</option>
+          <option value="without">Без иллюстраций</option>
+          <option value="both">Обе версии</option>
+        </select>
+      </label>
+      <label class="inline" id="keepCoverRow" hidden>
+        <input id="illustrationKeepCover" type="checkbox" checked/>
+        <span>Оставлять обложку в версии без иллюстраций</span>
+      </label>
+      <label>Сжатие иллюстраций и обложки
+        <select id="illustrationCompression">
+          <option value="off">Без сжатия — исходное качество</option>
+          <option value="balanced">Умеренное — до 1600 px, JPEG 82%</option>
+          <option value="strong">Сильное — до 1000 px, JPEG 65%</option>
+        </select>
+      </label>
+      <p class="muted small">Версия без иллюстраций сохраняет текст и оформление. Её имя заканчивается на «_без_иллюстраций». Сжатие применяется при экспорте; исходники сохраняются. Прозрачные изображения остаются PNG.</p>
       <div class="checks">
         <label class="inline"><input id="fmtPdf" type="checkbox" checked/><span>PDF — mobile-first</span></label>
         <label class="inline"><input id="fmtEpub" type="checkbox" checked/><span>EPUB 3 — reflowable</span></label>
-        <label class="inline"><input id="fmtFb2" type="checkbox"/><span>FB2 — книга с иллюстрациями</span></label>
+        <label class="inline"><input id="fmtFb2" type="checkbox"/><span>FB2 — FictionBook</span></label>
         <label class="inline"><input id="fmtMobi" type="checkbox"/><span>MOBI — для старых Kindle</span></label>
         <label class="inline"><input id="fmtAzw3" type="checkbox"/><span>AZW3 — Kindle с оформлением</span></label>
         <label class="inline"><input id="fmtTxt" type="checkbox"/><span>TXT — обычный текст UTF-8</span></label>
@@ -166,10 +185,24 @@
       <p id="outNameHint" class="muted small"></p>
     </section>
 
+    <section class="card">
+      <h2>Обновления</h2>
+      <label class="inline"><input id="automaticUpdates" type="checkbox" checked/><span>Проверять новые версии автоматически</span></label>
+      <button id="checkUpdatesBtn" class="ghost">Проверить обновления</button>
+      <p id="updateCheckStatus" class="muted small" role="status" aria-live="polite"></p>
+    </section>
   </aside>
 
   <!-- ─────────────── правая область ─────────────── -->
   <section class="main">
+    <section id="updateNotice" class="update-notice" role="status" aria-live="polite" hidden>
+      <div><strong>Вышла новая версия PDFMaker</strong><p id="updateNoticeText"></p></div>
+      <div class="row"><button id="installUpdateRelease" class="primary" hidden>Обновить</button><button id="openUpdateRelease" class="ghost">Открыть релиз</button><button id="dismissUpdateRelease" class="ghost">Позже</button></div>
+    </section>
+    <section id="sourceWarnings" class="source-warnings" role="status" aria-live="polite" hidden>
+      <div class="warning-heading"><strong>Проверьте состав книги</strong><button id="showSourceAudit" class="ghost small">Открыть аудит</button></div>
+      <ul id="sourceWarningsList"></ul>
+    </section>
     <nav class="tabs">
       <button class="tab active" data-tab="chapters">Главы <span id="tabChaptersCount" class="pill">0</span></button>
       <button class="tab" data-tab="audit">Аудит <span id="tabAuditCount" class="pill">—</span></button>
@@ -229,6 +262,7 @@
         <div class="panel-head">
           <div class="filters">
             <span class="muted small">Страницы отрисованы в мобильной ширине</span>
+            <select id="previewVersion" aria-label="Версия книги для предпросмотра" hidden></select>
             <select id="previewWidth">
               <option value="390">390 px</option>
               <option value="410" selected>410 px</option>
@@ -249,6 +283,16 @@
     </div>
   </section>
 </main>
+
+<dialog id="buildWarningsDialog" aria-labelledby="buildWarningsTitle" aria-describedby="buildWarningsDescription">
+  <h2 id="buildWarningsTitle">Проверьте состав книги перед сборкой</h2>
+  <p id="buildWarningsDescription">Можно вернуться к главам и исправить состав книги или продолжить сборку с указанными замечаниями.</p>
+  <ul id="buildWarningsList" class="note-list"></ul>
+  <form method="dialog" class="row">
+    <button id="cancelWarningBuild" value="cancel" autofocus>Вернуться к главам</button>
+    <button id="confirmWarningBuild" class="primary" value="continue">Собрать с предупреждениями</button>
+  </form>
+</dialog>
 
 <script type="module" src="app.js"></script>
 </body>

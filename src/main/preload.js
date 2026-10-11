@@ -11,6 +11,17 @@ contextBridge.exposeInMainWorld('api', {
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   pickOutDir: () => ipcRenderer.invoke('dialog:pickOutDir'),
   outputDirectory: () => ipcRenderer.invoke('output:getDirectory'),
+  updateStatus: () => ipcRenderer.invoke('updates:status'),
+  checkUpdates: (manual = false) => ipcRenderer.invoke('updates:check', manual),
+  setUpdateChecks: (enabled) => ipcRenderer.invoke('updates:enabled', enabled),
+  dismissUpdate: () => ipcRenderer.invoke('updates:dismiss'),
+  openUpdate: () => ipcRenderer.invoke('updates:open'),
+  installUpdate: () => ipcRenderer.invoke('updates:install'),
+  onUpdateProgress: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('updates:progress', handler);
+    return () => ipcRenderer.removeListener('updates:progress', handler);
+  },
   pickCover: () => ipcRenderer.invoke('dialog:pickCover'),
 
   analyze: (paths) => ipcRenderer.invoke('book:analyze', paths),

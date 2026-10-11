@@ -12,7 +12,7 @@ const path = require('path');
 const { analyze, build } = require('../src/core/pipeline');
 
 function parseArgs(argv) {
-  const args = { in: [], out: process.cwd(), title: '', team: '', url: '', accent: '', only: '', genre: 'fantasy' };
+  const args = { in: [], out: process.cwd(), title: '', team: '', url: '', accent: '', only: '', genre: 'fantasy', illustrations: 'with', compression: 'off', keepCover: true };
   for (let i = 2; i < argv.length; i += 1) {
     const a = argv[i];
     const next = () => argv[(i += 1)];
@@ -25,6 +25,13 @@ function parseArgs(argv) {
     else if (a === '--accent') args.accent = next();
     else if (a === '--genre') args.genre = next();
     else if (a === '--only') args.only = next();
+    else if (a === '--illustrations' || a === '--image-compression') {
+      const value = next();
+      if (!value || value.startsWith('--')) throw new Error('Укажите значение для ' + a);
+      if (a === '--illustrations') args.illustrations = value;
+      else args.compression = value;
+    }
+    else if (a === '--no-cover') args.keepCover = false;
   }
   return args;
 }
@@ -72,7 +79,7 @@ function bar(p) {
   if (analysis.fonts.length) console.log('Шрифты:', analysis.fonts);
   console.log(`Анализ: ${((Date.now() - t0) / 1000).toFixed(1)} с\n`);
 
-  const report = await build(
+  const result = await build(
     {
       meta: {
         title: args.title || analysis.suggestedTitle || 'Книга',
@@ -82,31 +89,37 @@ function bar(p) {
       style: { genre: args.genre, ...(args.accent ? { accent: args.accent } : {}) },
       outDir: path.resolve(args.out),
       formats,
+      illustrations: { version: args.illustrations, compression: args.compression, keepCover: args.keepCover },
     },
     onProgress,
   );
   process.stdout.write('\n');
 
   console.log(`\nГотово за ${((Date.now() - t0) / 1000).toFixed(1)} с`);
-  if (report.pdf) {
-    console.log(`PDF:  ${report.pdf.path}`);
-    console.log(`      страниц ${report.pdf.pages}, оглавление ${report.pdf.tocPages} стр., закладок ${report.pdf.bookmarks}, ${(report.pdf.size / 1048576).toFixed(2)} МБ`);
-  }
-  if (report.epub) {
-    console.log(`EPUB: ${report.epub.path}`);
-    console.log(`      документов ${report.epub.documents}, изображений ${report.epub.images}, ${(report.epub.size / 1048576).toFixed(2)} МБ`);
-  }
-  for(const kind of ['fb2','mobi','azw3','txt']) if(report[kind]) console.log(`${kind.toUpperCase()}: ${report[kind].path}\n      разделов ${report[kind].chapters}, ${(report[kind].size/1048576).toFixed(2)} МБ`);
-
-  for (const [kind, qa] of Object.entries(report.qa)) {
-    if (!qa) continue;
-    console.log(`\n${kind.toUpperCase()} QA: ${qa.ok ? 'пройден' : 'ЕСТЬ ЗАМЕЧАНИЯ'}`);
-    for (const c of qa.checks) {
-      if (!c.ok) console.log(`  ✗ ${c.name}${c.detail ? ` — ${c.detail}` : ''}`);
+  for (const report of result.versions || [result]) {
+    console.log(report.illustrations.version === 'without' ? '\nБез иллюстраций:' : '\nС иллюстрациями:');
+    if (report.illustrations.compression !== 'off') console.log(`Сжатие: ${report.illustrations.compression}; сжато изображений: ${report.illustrations.compressed}; экономия ресурсов: ${report.illustrations.savedBytes} байт`);
+    if (report.pdf) {
+      console.log(`PDF:  ${report.pdf.path}`);
+      console.log(`      страниц ${report.pdf.pages}, оглавление ${report.pdf.tocPages} стр., закладок ${report.pdf.bookmarks}, ${(report.pdf.size / 1048576).toFixed(2)} МБ`);
     }
-    for (const n of qa.notes || []) console.log(`  · ${n}`);
+    if (report.epub) {
+      console.log(`EPUB: ${report.epub.path}`);
+      console.log(`      документов ${report.epub.documents}, изображений ${report.epub.images}, ${(report.epub.size / 1048576).toFixed(2)} МБ`);
+    }
+    for(const kind of ['fb2','mobi','azw3','txt']) if(report[kind]) console.log(`${kind.toUpperCase()}: ${report[kind].path}\n      разделов ${report[kind].chapters}, ${(report[kind].size/1048576).toFixed(2)} МБ`);
+
+    for (const [kind, qa] of Object.entries(report.qa)) {
+      if (!qa) continue;
+      console.log(`\n${kind.toUpperCase()} QA: ${qa.ok ? 'пройден' : 'ЕСТЬ ЗАМЕЧАНИЯ'}`);
+      for (const c of qa.checks) {
+        if (!c.ok) console.log(`  ✗ ${c.name}${c.detail ? ` — ${c.detail}` : ''}`);
+      }
+      for (const n of qa.notes || []) console.log(`  · ${n}`);
+    }
+    for(const kind of supported) if(report[kind]?.warnings.length) console.log(`\n${kind.toUpperCase()} warnings:`,report[kind].warnings.slice(0,8));
+    for(const warning of report.illustrations.warnings) console.log('Иллюстрации:',warning);
   }
-  for(const kind of supported) if(report[kind]?.warnings.length) console.log(`\n${kind.toUpperCase()} warnings:`,report[kind].warnings.slice(0,8));
 })().catch((e) => {
   console.error('\nОШИБКА:', e.message);
   console.error(e.stack);

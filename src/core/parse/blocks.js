@@ -1,7 +1,7 @@
 'use strict';
 
 const { runsText } = require('../model');
-const { trimPara } = require('./normalize');
+const { trimPara, cleanInline } = require('./normalize');
 const { isTitleRepeat, parseHeading } = require('./titles');
 
 /**
@@ -28,20 +28,43 @@ function isSystemLine(text) {
   return false;
 }
 
-/** Снятие внешних скобок у строки системного блока. */
-function stripSystemBrackets(runs) {
-  if (!runs.length) return runs;
-  const out = runs.map((r) => ({ ...r }));
-  const first = out[0];
-  const last = out[out.length - 1];
-  const open = first.text.match(/^\s*([\[【《])/);
-  if (!open) return out;
-  const closeMap = { '[': ']', '【': '】', '《': '》' };
-  const close = closeMap[open[1]];
-  if (!last.text.trimEnd().endsWith(close)) return out;
-  first.text = first.text.replace(/^\s*[\[【《]/, '');
-  last.text = last.text.replace(new RegExp(`\\${close}\\s*$`), '');
-  return out.filter((r) => r.text.length > 0 || out.length === 1);
+const RECORD_FIELD = /^[\[【《]?\s*(?:Основной\s+настрой|Подходящий\s+ответ):|^<Шанс[^<>:\n]{0,70}:/iu;
+const RECORD_HEADER = /^(?:\[[^\]\n]+\]\s*){2,}$/u;
+const FIELD_LABEL = /^[\[【《<]?\s*[\p{L}\p{N}][\p{L}\p{N} \t()\/—–-]{0,70}:/u;
+
+/** Slice text by offsets without losing emphasis, links or punctuation. */
+function sliceRuns(runs, start, end) {
+  const out = [];
+  let offset = 0;
+  for (const run of runs) {
+    const next = offset + run.text.length;
+    if (next > start && offset < end) out.push({ ...run, text: run.text.slice(Math.max(0, start - offset), Math.min(run.text.length, end - offset)) });
+    offset = next;
+  }
+  return out;
+}
+
+/** Keep delimiters verbatim and restore fields flattened into one paragraph. */
+function systemRows(sourceRuns) {
+  const runs = sourceRuns.map(r => ({ ...r, text: cleanInline(r.text) }));
+  const text = runsText(runs);
+  const cuts = new Set([0, text.length]);
+  for (const match of text.matchAll(/\n/g)) { cuts.add(match.index); cuts.add(match.index + 1); }
+  for (const match of text.matchAll(/(?:[\[【《][ \t]*)?(?:Основной[ \t]+настрой|Подходящий[ \t]+ответ):|<Шанс[^<>:\n]{0,70}:/giu)) cuts.add(match.index);
+  const boundaries = [...cuts].sort((a, b) => a - b);
+  const rows = [];
+  for (let i = 1; i < boundaries.length; i += 1) {
+    let row = compactRuns(sliceRuns(runs, boundaries[i - 1], boundaries[i]), '');
+    const value = runsText(row);
+    if (!value.trim()) continue;
+    if (RECORD_HEADER.test(value)) row = row.map(r => ({ ...r, b: true }));
+    else {
+      const label = RECORD_FIELD.test(value) ? value.match(FIELD_LABEL) : null;
+      if (label) row = [...sliceRuns(row, 0, label[0].length).map(r => ({ ...r, b: true })), ...sliceRuns(row, label[0].length, value.length)];
+    }
+    rows.push(row);
+  }
+  return rows;
 }
 
 function isHeadingStyle(style) {
@@ -75,6 +98,7 @@ function buildBlocks(rawParas, section) {
       kind: 'text',
       text,
       runs: compactRuns(runs, text),
+      systemRuns: p.runs || [],
       style: p.style,
       align: p.align,
       list: p.list,
@@ -137,13 +161,24 @@ function buildBlocks(rawParas, section) {
     }
 
     if (isSystemLine(item.text)) {
-      // Подряд идущие системные строки — один неразрушаемый блок.
+      // Continue explicit multiline brackets, but keep following prose outside.
       const lines = [];
-      while (i < cleaned.length && cleaned[i].kind === 'text' && isSystemLine(cleaned[i].text)) {
-        lines.push(stripSystemBrackets(cleaned[i].runs));
+      let balance = 0;
+      let structured = false;
+      while (i < cleaned.length && cleaned[i].kind === 'text' &&
+             (isSystemLine(cleaned[i].text) || balance > 0 || (structured && RECORD_FIELD.test(cleaned[i].text)))) {
+        const current = cleaned[i];
+        const continuation = balance > 0 && !isSystemLine(current.text) && !RECORD_FIELD.test(current.text);
+        const rows = systemRows(current.systemRuns);
+        if (continuation && lines.length && rows.length) {
+          lines[lines.length - 1].push({ text: ' ' }, ...rows.shift());
+        }
+        lines.push(...rows);
+        structured ||= rows.some(row => RECORD_HEADER.test(runsText(row)) || RECORD_FIELD.test(runsText(row)));
+        balance = Math.max(0, balance + (current.text.match(/[\[【《]/g) || []).length - (current.text.match(/[\]】》]/g) || []).length);
         i += 1;
       }
-      blocks.push({ type: 'system', lines });
+      blocks.push({ type: 'system', lines, ...(structured ? { structured: true } : {}) });
       continue;
     }
 

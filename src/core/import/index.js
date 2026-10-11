@@ -185,6 +185,11 @@ async function importSources(inputPaths, opts = {}) {
     let rawParas = [];
     let encoding = null;
 
+    if (!file.buffer.length) {
+      appendChapter(file, [], section, issues, encoding);
+      continue;
+    }
+
     try {
       if (BOOK_EXT.has(ext)) {
         const res = ext === 'fb2' ? parseFb2(file.buffer,addAsset) : await parseKindle(file.buffer,addAsset);

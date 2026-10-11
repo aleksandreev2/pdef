@@ -1,7 +1,7 @@
 {
   "name": "pdfmaker-mobile",
   "productName": "PDFMaker Mobile",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "Сборка PDF, EPUB, FB2, MOBI, AZW3 и TXT из отдельных глав",
   "main": "src/main/main.js",
   "author": "Дом Некроманта",
@@ -26,7 +26,8 @@
     "pdfjs-dist": "^4.10.38",
     "pdfkit": "^0.16.0",
     "svg-to-pdfkit": "0.1.8",
-    "xmllint-wasm": "5.3.0"
+    "xmllint-wasm": "5.3.0",
+    "@napi-rs/canvas": "0.1.100"
   },
   "devDependencies": {
     "electron": "33.4.11",
@@ -42,7 +43,9 @@
     "files": [
       "src/**/*",
       "assets/**/*",
-      "package.json"
+      "package.json",
+      "LICENSE",
+      "THIRD_PARTY_NOTICES.md"
     ],
     "extraResources": [
       {
@@ -87,5 +90,13 @@
   },
   "allowScripts": {
     "electron": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aleksandreev2/pdef.git"
+  },
+  "homepage": "https://github.com/aleksandreev2/pdef#readme",
+  "bugs": {
+    "url": "https://github.com/aleksandreev2/pdef/issues"
   }
 }

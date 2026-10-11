@@ -9,6 +9,19 @@ const { GENRES } = require('../core/genres');
 const { svgTitleMark, svgSceneBreak, svgFolio } = require('../core/signature');
 const { availableFamilies, resolveFonts } = require('../core/fonts');
 const { createOutputPreferences } = require('./output-preferences');
+const { createUpdateChecker } = require('./updates');
+const { installRelease } = require('./update-install');
+let installingUpdate=false,bookOperations=0;
+async function bookOperation(operation) {
+  if(installingUpdate) throw new Error('Дождитесь завершения обновления.');
+  bookOperations++;
+  try {return await operation();} finally {bookOperations--;}
+}
+
+let updateChecker;
+const updates = () => updateChecker ||= createUpdateChecker({
+  file: path.join(app.getPath('userData'), 'updates.json'), currentVersion: app.getVersion(),
+});
 
 // Optional release verification uses a separate profile and never touches user books/settings.
 const checkIndex = process.argv.indexOf('--installation-check');
@@ -92,6 +105,34 @@ ipcMain.handle('dialog:pickOutDir', async () => {
 
 ipcMain.handle('output:getDirectory', async () => outputPreferences().get());
 
+ipcMain.handle('updates:status', () => updates().status());
+ipcMain.handle('updates:check', (_e, manual) => updates().check({ manual: manual === true }));
+ipcMain.handle('updates:enabled', (_e, enabled) => updates().setEnabled(enabled === true));
+ipcMain.handle('updates:dismiss', () => updates().dismiss());
+ipcMain.handle('updates:open', async () => {
+  const result = await updates().status();
+  if (result.release) await shell.openExternal(result.release.url);
+});
+ipcMain.handle('updates:install', async () => {
+  if(installingUpdate) throw new Error('Обновление уже выполняется.');
+  if(bookOperations) throw new Error('Дождитесь завершения разбора или сборки книги.');
+  if(process.platform!=='win32') throw new Error('Установка из приложения доступна для Windows.');
+  installingUpdate=true;
+  try {
+    const result=await updates().check({manual:true});
+    if(result.status!=='available') throw new Error(result.message || 'Новая версия не найдена.');
+    return await installRelease({release:result.release,cacheDir:path.join(app.getPath('userData'),'update-downloads'),
+      confirm:async release=>(await dialog.showMessageBox(mainWindow,{
+        type:'question',title:'Обновление PDFMaker',buttons:['Отмена','Скачать и установить'],defaultId:0,cancelId:0,
+        message:`Обновить PDFMaker до версии ${release.version}?`,
+        detail:'После загрузки и проверки файла откроется установщик, а PDFMaker закроется. Сначала сохраните нужные книги. Настройки установленного приложения сохраняются.',
+      })).response===1,
+      onProgress:p=>{if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('updates:progress',p);},
+      start:file=>shell.openPath(file),quit:()=>setImmediate(()=>app.quit()),
+    });
+  } finally {installingUpdate=false;}
+});
+
 ipcMain.handle('dialog:pickCover', async () => {
   const res = await dialog.showOpenDialog(mainWindow, {
     title: 'Выберите обложку',
@@ -102,14 +143,14 @@ ipcMain.handle('dialog:pickCover', async () => {
 });
 
 ipcMain.handle('book:analyze', async (_e, paths) => {
-  return pipeline.analyze(paths, sendProgress);
+  return bookOperation(() => pipeline.analyze(paths, sendProgress));
 });
 
 ipcMain.handle('book:applyEdits', async (_e, edits) => pipeline.applyEdits(edits));
 
 ipcMain.handle('book:previewFrontMatter', async (_e, opts) => require('../core/pdf/front-matter-preview').previewFrontMatter(opts));
 
-ipcMain.handle('book:build', async (_e, opts) => pipeline.build(opts, sendProgress));
+ipcMain.handle('book:build', async (_e, opts) => bookOperation(() => pipeline.build(opts, sendProgress)));
 
 ipcMain.handle('asset:dataUrl', async (_e, assetId) => pipeline.assetDataUrl(assetId));
 

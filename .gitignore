@@ -4,6 +4,9 @@ tools/
 assets/fonts/*.ttf
 assets/fonts/*.otf
 *.log
+.DS_Store
+Thumbs.db
+desktop.ini
 
 # Generated books
 Файлы/

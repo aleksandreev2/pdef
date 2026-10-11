@@ -1,5 +1,6 @@
 import { accentFromImage } from './accent.js';
 import { renderSample, forgetDocument, renderFrontMatter } from './pdf-preview.js';
+import { initUpdates } from './updates-ui.js';
 
 const api = window.api;
 const $ = (id) => document.getElementById(id);
@@ -7,6 +8,8 @@ const OUTPUT_FORMATS = ['pdf','epub','fb2','mobi','azw3','txt'];
 const formatInput = key => $('fmt'+key[0].toUpperCase()+key.slice(1));
 const selectedFormats = () => Object.fromEntries(OUTPUT_FORMATS.map(key=>[key,formatInput(key).checked]));
 const hasFormat = () => OUTPUT_FORMATS.some(key=>formatInput(key).checked);
+const bookVersions = report => report.versions || [report];
+const versionLabel = report => report.illustrations?.version === 'without' ? 'Без иллюстраций' : 'С иллюстрациями';
 
 /* ───────────────────────────── состояние ───────────────────────────── */
 
@@ -14,6 +17,7 @@ const state = {
   sources: [],
   chapters: [],
   audit: null,
+  sourceWarnings: [],
   stats: null,
   coverCandidates: [],
   cover: null,
@@ -52,6 +56,36 @@ function bytes(n) {
   return `${(n / 1048576).toFixed(2)} МБ`;
 }
 
+const escapeHtml = text => String(text).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function fillWarningList(element, warnings) {
+  element.replaceChildren(...warnings.map(text => {
+    const item = document.createElement('li');
+    item.textContent = text;
+    return item;
+  }));
+}
+
+function renderSourceWarnings() {
+  $('sourceWarnings').hidden = !state.sourceWarnings.length;
+  fillWarningList($('sourceWarningsList'), state.sourceWarnings);
+}
+
+function reviewSourceWarnings() {
+  if (!state.sourceWarnings.length) return Promise.resolve(true);
+  const dialog = $('buildWarningsDialog');
+  fillWarningList($('buildWarningsList'), state.sourceWarnings);
+  dialog.returnValue = 'cancel';
+  return new Promise(resolve => {
+    dialog.addEventListener('close', () => {
+      const proceed = dialog.returnValue === 'continue';
+      if (!proceed) switchTab('chapters');
+      resolve(proceed);
+    }, { once: true });
+    dialog.showModal();
+  });
+}
+
 function log(message) {
   const el = $('logContent');
   const time = new Date().toLocaleTimeString('ru-RU');
@@ -67,6 +101,7 @@ function setBusy(busy, label) {
   state.busy = busy;
   $('buildBtn').disabled = busy || !state.chapters.some((c) => c.include) || !hasFormat();
   OUTPUT_FORMATS.forEach(key=>{formatInput(key).disabled=busy;});
+  ['illustrationVersion','illustrationCompression','illustrationKeepCover'].forEach(id=>{$(id).disabled=busy;});
   $('pickFilesBtn').disabled = busy;
   $('pickFolderBtn').disabled = busy;
   $('clearBtn').disabled = busy || !state.sources.length;
@@ -106,12 +141,14 @@ async function runAnalysis() {
     state.chapters = result.summary.chapters;
     state.order = state.chapters.map((c) => c.id);
     state.audit = result.audit;
+    state.sourceWarnings = result.sourceWarnings || [];
     state.stats = result.stats;
     state.coverCandidates = result.coverCandidates;
     state.cover = result.cover ? result.cover.assetId : null;
 
     renderChapters();
     renderAudit();
+    renderSourceWarnings();
     renderCoverOptions();
     await refreshCoverPreview();
     // Акцент берётся из обложки сразу: один спокойный цвет на всю книгу.
@@ -122,10 +159,12 @@ async function runAnalysis() {
     setStatus(
       `${a.included} ${plural(a.included, 'раздел', 'раздела', 'разделов')} · ${fmt(result.stats.words)} слов` +
         (a.gaps.length ? ` · пропусков: ${a.gaps.length}` : '') +
+        (a.empty.length ? ` · пустых файлов: ${a.empty.length}` : '') +
         (a.duplicates.length ? ` · дублей: ${a.duplicates.length}` : ''),
     );
     log(`Разобрано: ${a.total}, в книгу входит ${a.included}, слов ${fmt(result.stats.words)}`);
     for (const w of result.warnings) log(`! ${w}`);
+    for (const w of state.sourceWarnings) log(`! ${w}`);
     for (const w of result.fonts) log(`! ${w}`);
   } catch (e) {
     log(`ОШИБКА разбора: ${e.message}`);
@@ -183,6 +222,7 @@ function renderChapters() {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.checked = ch.include;
+    cb.disabled = !ch.blocks;
     cb.title = 'Включить раздел в книгу';
     cb.addEventListener('change', () => {
       ch.include = cb.checked;
@@ -288,34 +328,39 @@ function attachDragReorder(tbody) {
 let editTimer = null;
 function pushEdits() {
   clearTimeout(editTimer);
-  editTimer = setTimeout(async () => {
-    try {
-      const result = await api.applyEdits({
-        chapters: state.chapters.map((c) => ({
-          id: c.id,
-          include: c.include,
-          title: c.title,
-          number: c.number,
-          kind: c.kind,
-        })),
-        order: state.order,
-        cover: state.cover,
-      });
-      state.stats = result.stats;
-      // Пересчитанные показатели глав возвращаются из ядра.
-      const byId = new Map(result.summary.chapters.map((c) => [c.id, c]));
-      for (const ch of state.chapters) {
-        const fresh = byId.get(ch.id);
-        if (fresh) Object.assign(ch, { words: fresh.words, images: fresh.images, systemBlocks: fresh.systemBlocks });
-      }
-      $('tabChaptersCount').textContent = String(state.chapters.filter((c) => c.include).length);
-      $('buildBtn').disabled = state.busy || !state.chapters.some((c) => c.include) || !hasFormat();
-      updateOutNameHint();
-      renderAudit();
-    } catch (e) {
-      log(`ОШИБКА применения правок: ${e.message}`);
-    }
+  editTimer = setTimeout(() => {
+    syncEdits().catch(e => log(`ОШИБКА применения правок: ${e.message}`));
   }, 180);
+}
+
+async function syncEdits() {
+  clearTimeout(editTimer);
+  editTimer = null;
+  const result = await api.applyEdits({
+    chapters: state.chapters.map((c) => ({
+      id: c.id,
+      include: c.include,
+      title: c.title,
+      number: c.number,
+      kind: c.kind,
+    })),
+    order: state.order,
+    cover: state.cover,
+  });
+  state.stats = result.stats;
+  state.audit = result.audit;
+  state.sourceWarnings = result.sourceWarnings || [];
+  // Пересчитанные показатели глав возвращаются из ядра.
+  const byId = new Map(result.summary.chapters.map((c) => [c.id, c]));
+  for (const ch of state.chapters) {
+    const fresh = byId.get(ch.id);
+    if (fresh) Object.assign(ch, { words: fresh.words, images: fresh.images, systemBlocks: fresh.systemBlocks, issues: fresh.issues });
+  }
+  $('tabChaptersCount').textContent = String(state.chapters.filter((c) => c.include).length);
+  $('buildBtn').disabled = state.busy || !state.chapters.some((c) => c.include) || !hasFormat();
+  updateOutNameHint();
+  renderAudit();
+  renderSourceWarnings();
 }
 
 /* ───────────────────────────── аудит ───────────────────────────── */
@@ -329,6 +374,7 @@ function renderAudit() {
   const s = state.stats;
   const el = $('auditContent');
   if (!a) {
+    $('tabAuditCount').textContent = '—';
     el.innerHTML = '<p class="muted">Аудит выполняется автоматически после добавления исходников.</p>';
     return;
   }
@@ -514,8 +560,11 @@ function updateOutNameHint() {
     ? `${base}_главы_${String(nums[0]).padStart(3, '0')}-${String(nums[nums.length - 1]).padStart(3, '0')}`
     : `${base}_полное_издание`;
   const selected=OUTPUT_FORMATS.filter(key=>formatInput(key).checked);
-  const destination = selected.length > 1 ? 'В папке новеллы. ' : 'В выбранной папке. ';
-  $('outNameHint').textContent = selected.length ? `${destination}Файлы: ${selected.map(key=>name+'.'+key).join(' · ')}` : 'Выберите хотя бы один формат';
+  const version = $('illustrationVersion').value;
+  $('keepCoverRow').hidden = version === 'with';
+  const suffixes = version === 'both' ? ['', '_без_иллюстраций'] : [version === 'without' ? '_без_иллюстраций' : ''];
+  const destination = selected.length > 1 || version === 'both' ? 'В папке новеллы. ' : 'В выбранной папке. ';
+  $('outNameHint').textContent = selected.length ? `${destination}Файлы: ${suffixes.flatMap(suffix=>selected.map(key=>name+suffix+'.'+key)).join(' · ')}` : 'Выберите хотя бы один формат';
 }
 
 async function chooseOutputDirectory() {
@@ -535,6 +584,7 @@ async function chooseOutputDirectory() {
 }
 
 async function runBuild() {
+  if (state.busy) return;
   if(!hasFormat()) {setStatus('Выберите хотя бы один формат для сохранения');return;}
   if (!state.outDir) {
     if (!await chooseOutputDirectory()) return;
@@ -545,12 +595,16 @@ async function runBuild() {
     return;
   }
 
-  setBusy(true, 'Сборка…');
-  forgetDocument();
-  const started = Date.now();
-  log('Сборка начата');
-
+  setBusy(true, 'Проверка состава книги…');
   try {
+    // Flush changes before reviewing: a just-excluded chapter can create a gap.
+    await syncEdits();
+    if (!state.chapters.some(c => c.include)) { setStatus('Нет включённых глав для сборки'); return; }
+    if (!await reviewSourceWarnings()) { setStatus('Сборка отменена. Проверьте состав глав.'); return; }
+    setStatus('Сборка…');
+    forgetDocument();
+    const started = Date.now();
+    log('Сборка начата');
     const report = await api.build({
       meta: {
         title: $('metaTitle').value.trim(),
@@ -561,15 +615,28 @@ async function runBuild() {
       style: collectStyle(),
       outDir: state.outDir,
       formats: selectedFormats(),
+      illustrations: {
+        version: $('illustrationVersion').value,
+        compression: $('illustrationCompression').value,
+        keepCover: $('illustrationKeepCover').checked,
+      },
     });
 
     state.report = report;
+    $('previewVersion').innerHTML = '';
+    bookVersions(report).forEach((r,i)=>{
+      const option = document.createElement('option');
+      option.value = i;
+      option.textContent = versionLabel(r);
+      $('previewVersion').appendChild(option);
+    });
+    $('previewVersion').hidden = !report.versions;
     renderReport(report);
     switchTab('report');
 
     const secs = ((Date.now() - started) / 1000).toFixed(1);
     const saved=OUTPUT_FORMATS.filter(key=>report[key]).map(key=>key.toUpperCase()).join(', ');
-    setStatus(`Готово за ${secs} с · ${saved}`);
+    setStatus(`Готово за ${secs} с · ${saved}${report.versions ? ' · обе версии' : ''}`);
     log(`Готово за ${secs} с`);
     log(`Папка экспорта: ${report.outDir}`);
 
@@ -613,24 +680,28 @@ function renderReport(report) {
     first && last ? `Собраны главы ${String(first.number).padStart(3, '0')}–${String(last.number).padStart(3, '0')}.` : 'Книга собрана.';
   parts.push(`<h3>Готово</h3><p>${range}</p>`);
 
-  for (const key of OUTPUT_FORMATS) {
-    const kind=key.toUpperCase(),data=report[key];
-    if (!data) continue;
-    const meta =
-      kind === 'PDF'
-        ? `${fmt(data.pages)} страниц · оглавление ${data.tocPages} стр. · закладок ${data.bookmarks} · ${bytes(data.size)}`
-        : key === 'epub' ? `${fmt(data.documents)} документов · иллюстраций ${data.images} · ${bytes(data.size)}`
-        : `${fmt(data.chapters)} разделов · ${key==='txt' ? 'обычный текст · ' : `иллюстраций ${fmt(data.images)} · `}${bytes(data.size)}`;
-    parts.push(
-      `<div class="file-out"><div><div class="name">${data.path.split(/[\\/]/).pop()}</div>` +
-        `<div class="meta">${meta}</div></div><div class="actions">` +
-        `<button data-open="${encodeURIComponent(data.path)}" class="ghost small">Открыть</button>` +
-        `<button data-reveal="${encodeURIComponent(data.path)}" class="ghost small">Показать в папке</button>` +
-        '</div></div>',
-    );
+  for (const version of bookVersions(report)) {
+    parts.push(`<h3>${versionLabel(version)}</h3><p class="muted small">Иллюстраций в тексте: ${fmt(version.stats.images)}</p>`);
+    const compression = version.illustrations;
+    if (compression && compression.compression !== 'off') parts.push(`<p class="muted small">Сжатие: ${compression.compression === 'strong' ? 'сильное' : 'умеренное'} · сжато изображений: ${fmt(compression.compressed)} · экономия ресурсов: ${compression.savedBytes ? bytes(compression.savedBytes) : '0 КБ'}</p>`);
+    for (const key of OUTPUT_FORMATS) {
+      const kind=key.toUpperCase(),data=version[key];
+      if (!data) continue;
+      const meta =
+        kind === 'PDF'
+          ? `${fmt(data.pages)} страниц · оглавление ${data.tocPages} стр. · закладок ${data.bookmarks} · ${bytes(data.size)}`
+          : key === 'epub' ? `${fmt(data.documents)} документов · иллюстраций ${data.images} · ${bytes(data.size)}`
+          : `${fmt(data.chapters)} разделов · ${key==='txt' ? 'обычный текст · ' : `иллюстраций ${fmt(data.images)} · `}${bytes(data.size)}`;
+      parts.push(
+        `<div class="file-out"><div><div class="name">${data.path.split(/[\\/]/).pop()}</div>` +
+          `<div class="meta">${meta}</div></div><div class="actions">` +
+          `<button data-open="${encodeURIComponent(data.path)}" class="ghost small">Открыть</button>` +
+          `<button data-reveal="${encodeURIComponent(data.path)}" class="ghost small">Показать в папке</button>` +
+          '</div></div>',
+      );
+    }
   }
-
-  parts.push('<h3>Книга в цифрах</h3><div class="stat-grid">');
+  parts.push(`<h3>Книга в цифрах${report.versions ? ' — ' + versionLabel(report) : ''}</h3><div class="stat-grid">`);
   parts.push(stat('Глав', fmt(s.chapters)));
   if (report.pdf) parts.push(stat('Страниц PDF', fmt(report.pdf.pages)));
   parts.push(stat('Формат PDF', report.style.pageFormat, true));
@@ -654,16 +725,20 @@ function renderReport(report) {
   parts.push(stat('Жанровые орнаменты', report.style.signature ? 'да' : 'нет', true));
   parts.push('</div>');
 
-  if (report.qa.pdf) parts.push(`<h3>PDF — структурная проверка</h3>${checkList(report.qa.pdf)}`);
-  if (report.qa.epub) parts.push(`<h3>EPUB — структурная проверка</h3>${checkList(report.qa.epub)}`);
-  for(const key of OUTPUT_FORMATS.filter(key=>!['pdf','epub'].includes(key))) if(report.qa[key]) parts.push(`<h3>${key.toUpperCase()} — проверка файла</h3>${checkList(report.qa[key])}`);
+  for (const version of bookVersions(report)) {
+    for (const key of OUTPUT_FORMATS) if (version.qa[key]) parts.push(`<h3>${key.toUpperCase()} — проверка${report.versions ? ' · ' + versionLabel(version) : ''}</h3>${checkList(version.qa[key])}`);
+  }
 
   const warn = [
+    ...(report.sourceWarnings || []),
     ...(report.fontWarnings || []),
-    ...OUTPUT_FORMATS.flatMap(key=>report[key]?.warnings || []),
+    ...bookVersions(report).flatMap(version=>[
+      ...(version.illustrations?.warnings || []),
+      ...OUTPUT_FORMATS.flatMap(key=>version[key]?.warnings || []),
+    ]),
   ];
   if (warn.length) {
-    parts.push(`<h3>Предупреждения</h3><ul class="note-list">${warn.map((w) => `<li>${w}</li>`).join('')}</ul>`);
+    parts.push(`<h3>Предупреждения</h3><ul class="note-list">${warn.map((w) => `<li>${escapeHtml(w)}</li>`).join('')}</ul>`);
   }
 
   el.innerHTML = parts.join('');
@@ -680,7 +755,7 @@ function renderReport(report) {
 
 async function showPreview() {
   const grid = $('previewGrid');
-  const report = state.report;
+  const report = state.report && bookVersions(state.report)[Number($('previewVersion').value) || 0];
   if (!report || !report.pdf || !report.qa.pdf) {
     grid.innerHTML = '<p class="muted">Предпросмотр появится после сборки PDF.</p>';
     return;
@@ -788,15 +863,18 @@ async function init() {
   $('pickFilesBtn').addEventListener('click', async () => addSources(await api.pickSources()));
   $('pickFolderBtn').addEventListener('click', async () => addSources(await api.pickFolder()));
   $('clearBtn').addEventListener('click', () => {
+    clearTimeout(editTimer);
     state.sources = [];
     state.chapters = [];
     state.audit = null;
+    state.sourceWarnings = [];
     state.stats = null;
     state.cover = null;
     state.coverCandidates = [];
     renderSourceList();
     renderChapters();
     renderAudit();
+    renderSourceWarnings();
     renderCoverOptions();
     refreshCoverPreview();
     setStatus('Добавьте главы, чтобы начать');
@@ -829,6 +907,7 @@ async function init() {
 
   $('accentAutoBtn').addEventListener('click', () => applyAccentFromCover(false));
   $('buildBtn').addEventListener('click', runBuild);
+  $('showSourceAudit').addEventListener('click', () => switchTab('audit'));
   $('chapterFilter').addEventListener('input', renderChapters);
   $('onlyProblems').addEventListener('change', renderChapters);
   $('metaTitle').addEventListener('input', updateOutNameHint);
@@ -836,6 +915,9 @@ async function init() {
     updateOutNameHint();
     $('buildBtn').disabled=state.busy || !state.chapters.some(c=>c.include) || !hasFormat();
   }));
+
+  $('illustrationVersion').addEventListener('change',updateOutNameHint);
+  $('previewVersion').addEventListener('change',showPreview);
 
   $('includeAllBtn').addEventListener('click', () => {
     for (const ch of state.chapters) if (ch.blocks > 0) ch.include = true;
@@ -861,8 +943,11 @@ async function init() {
     state.chapters = result.summary.chapters;
     state.order = state.chapters.map((c) => c.id);
     state.stats = result.stats;
+    state.audit = result.audit;
+    state.sourceWarnings = result.sourceWarnings || [];
     renderChapters();
     renderAudit();
+    renderSourceWarnings();
   });
 
   $('previewRefresh').addEventListener('click', showPreview);
@@ -896,6 +981,7 @@ async function init() {
 
   updateOutNameHint();
   log('PDFMaker Mobile готов к работе');
+  initUpdates(api,{isBusy:()=>state.busy,setBusy:busy=>setBusy(busy,busy?'Загрузка обновления…':undefined)});
 }
 
 

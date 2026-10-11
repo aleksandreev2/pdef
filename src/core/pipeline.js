@@ -5,7 +5,7 @@ const fs = require('fs/promises');
 const os = require('os');
 
 const { importSources, sortChapters } = require('./import');
-const { auditChapters } = require('./audit');
+const { auditChapters, refreshAuditSelection, auditWarnings } = require('./audit');
 const { computeStats } = require('./stats');
 const { clampStyle } = require('./style');
 const { resolveFonts } = require('./fonts');
@@ -18,6 +18,7 @@ const { buildFb2 } = require('./export/fb2');
 const { buildTxt } = require('./export/text');
 const { findConverter, buildKindle } = require('./export/kindle');
 const { checkExport } = require('./qa/exports');
+const { illustrationOptions, prepareIllustrations } = require('./illustrations');
 
 /**
  * Один разобранный исходник — два формата (п.0 спецификации).
@@ -84,6 +85,7 @@ async function analyze(paths, onProgress = () => {}) {
     audit,
     stats,
     warnings,
+    sourceWarnings: auditWarnings(audit),
     coverCandidates,
     cover: book.cover,
     fonts: resolveFonts({}).warnings,
@@ -122,7 +124,7 @@ function applyEdits(edits = {}) {
     for (const patch of edits.chapters) {
       const ch = byId.get(patch.id);
       if (!ch) continue;
-      if (typeof patch.include === 'boolean') ch.include = patch.include;
+      if (typeof patch.include === 'boolean') ch.include = patch.include && ch.blocks.length > 0;
       if (typeof patch.title === 'string') ch.title = patch.title;
       if (patch.number === null || Number.isFinite(patch.number)) ch.number = patch.number;
       if (typeof patch.kind === 'string') ch.kind = patch.kind;
@@ -141,7 +143,8 @@ function applyEdits(edits = {}) {
 
   // Статистика пересчитывается, потому что состав глав изменился.
   book.stats = computeStats(book.chapters);
-  return { summary: summarize(book), stats: book.stats };
+  book.audit = refreshAuditSelection(book.audit, book.chapters);
+  return { summary: summarize(book), stats: book.stats, audit: book.audit, sourceWarnings: auditWarnings(book.audit) };
 }
 
 /* ───────────────────────────── имена файлов ───────────────────────────── */
@@ -191,7 +194,31 @@ function outputBaseName(book) {
  */
 async function build(opts, onProgress = () => {}) {
   if (!session.book) throw new Error('Сначала выполните разбор исходников');
-  const book = session.book;
+  const options = illustrationOptions(opts.illustrations);
+  const source = session.book;
+  Object.assign(source, {
+    title: opts.meta.title || source.title || 'Книга',
+    subtitle: opts.meta.subtitle || 'Полное издание',
+    team: opts.meta.team || source.team,
+    teamUrl: opts.meta.teamUrl || source.teamUrl,
+    language: opts.meta.language || source.language || 'ru',
+  });
+  const formats = { pdf: true, epub: true, fb2: false, mobi: false, azw3: false, txt: false, ...opts.formats };
+  const count = Object.values(formats).filter(Boolean).length;
+  if (!count) throw new Error('Выберите хотя бы один формат для сохранения');
+  const outDir = count > 1 || options.version === 'both' ? path.join(opts.outDir, novelFolderName(source.title)) : opts.outDir;
+  const versions = [];
+  for (const version of options.version === 'both' ? ['with', 'without'] : [options.version]) {
+    const prepared = await prepareIllustrations(source, { ...options, version }, onProgress);
+    const report = await buildVersion(opts, onProgress, prepared.book, outDir, version);
+    report.illustrations = prepared.report;
+    versions.push(report);
+  }
+  // Keep the existing single-report API and primary PDF preview working.
+  return versions.length === 1 ? versions[0] : { ...versions[0], versions };
+}
+
+async function buildVersion(opts, onProgress, book, outDir, version) {
   const formats={pdf:true,epub:true,fb2:false,mobi:false,azw3:false,txt:false,...opts.formats};
   const selected=['pdf','epub','fb2','mobi','azw3','txt'].filter(k=>formats[k]);
   if(!selected.length) throw new Error('Выберите хотя бы один формат для сохранения');
@@ -218,9 +245,8 @@ async function build(opts, onProgress = () => {}) {
   const active = book.chapters.filter((c) => c.include && c.blocks.length);
   if (!active.length) throw new Error('Нет ни одной главы для сборки');
 
-  const outDir = selected.length > 1 ? path.join(opts.outDir, novelFolderName(book.title)) : opts.outDir;
   await fs.mkdir(outDir, { recursive: true });
-  const base = outputBaseName(book);
+  const base = outputBaseName(book) + (version === 'without' ? '_без_иллюстраций' : '');
   const pdfPath = path.join(outDir, `${base}.pdf`);
   const epubPath = path.join(outDir, `${base}.epub`);
 
@@ -294,6 +320,7 @@ async function build(opts, onProgress = () => {}) {
       ...Object.fromEntries(['fb2','mobi','azw3','txt'].map(format=>[format,extraResults[format] ? {path:path.join(outDir,base+'.'+format),...extraResults[format]} : null])),
       stats: book.stats,
       audit: book.audit,
+      sourceWarnings: auditWarnings(book.audit),
       style: {
         genre: style.genre,
         genreName: style.name,

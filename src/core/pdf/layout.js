@@ -107,6 +107,7 @@ function buildChapterFlow(ch, ctx) {
         const inner = geom.contentW - pad * 2 - iconColumn;
         const laid = [];
         for (const runs of block.lines) {
+          if (block.structured && laid.length) laid.push({ items: [], align: 'left' });
           const tokens = tokenize(runs, style.signature ? 'serif' : 'sans');
           if (!tokens.length) {
             laid.push({ items: [], align: 'left' });
@@ -117,7 +118,7 @@ function buildChapterFlow(ch, ctx) {
             size,
             firstIndent: 0,
             justify: false,
-            hyphenate: style.hyphenate,
+            hyphenate: block.structured ? false : style.hyphenate,
             align: 'left',
             measure,
           });

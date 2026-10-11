@@ -74,11 +74,12 @@ function auditChapters(chapters) {
     if (ch.encoding) {
       report.encodings[ch.encoding] = (report.encodings[ch.encoding] || 0) + 1;
     }
-    if (!ch.blocks.length) {
+    const broken = ch.issues.some((i) => i.startsWith('Файл не разобран'));
+    if (!ch.blocks.length && !broken) {
       report.empty.push({ file: ch.sourceName, label: chapterLabel(ch) });
       ch.include = false;
     }
-    if (ch.issues.some((i) => i.startsWith('Файл не разобран'))) {
+    if (broken) {
       report.broken.push({ file: ch.sourceName, reason: ch.issues[0] });
     }
   }
@@ -124,6 +125,19 @@ function auditChapters(chapters) {
     });
   }
 
+  return refreshAuditSelection(report, chapters);
+}
+
+/** Recheck the selected book without reselecting duplicate versions. */
+function refreshAuditSelection(report, chapters) {
+  report.gaps = [];
+  report.firstNumber = null;
+  report.lastNumber = null;
+  report.shortSuspects = [];
+  report.chapters = 0;
+  report.extras = [];
+  report.images = { total: 0, inChapters: 0, gallery: 0 };
+  for (const ch of chapters) ch.issues = ch.issues.filter(i => !i.startsWith('Глава заметно короче остальных'));
   /* ── нумерация и пропуски ── */
   const active = chapters.filter((c) => c.include);
   const nums = active
@@ -167,4 +181,24 @@ function auditChapters(chapters) {
   return report;
 }
 
-module.exports = { auditChapters, countWords, chapterPlainText };
+/** Compact consecutive missing numbers so long gaps remain readable. */
+function missingNumbers(numbers) {
+  const ranges = [];
+  const pad = n => String(n).padStart(3, '0');
+  for (let i = 0; i < numbers.length; i += 1) {
+    const start = numbers[i];
+    while (i + 1 < numbers.length && numbers[i + 1] === numbers[i] + 1) i += 1;
+    ranges.push(start === numbers[i] ? pad(start) : `${pad(start)}–${pad(numbers[i])}`);
+  }
+  return ranges.join(', ');
+}
+
+function auditWarnings(report) {
+  return [
+    ...(report.gaps.length ? [`В выбранной книге отсутствуют главы: ${missingNumbers(report.gaps)}. Проверьте исходники и включённые главы.`] : []),
+    ...report.empty.map(e => `Пустой файл «${e.file}»: нет текста или иллюстраций. Он исключён из книги.`),
+    ...report.broken.map(e => `Файл «${e.file}» не разобран и исключён из книги: ${e.reason.replace(/^Файл не разобран:\s*/, '')}`),
+  ];
+}
+
+module.exports = { auditChapters, refreshAuditSelection, auditWarnings, countWords, chapterPlainText };

@@ -19,13 +19,15 @@ const { svgTitleMark, svgSceneBreak, svgFolio } = require('../src/core/signature
 const { availableFamilies, resolveFonts } = require('../src/core/fonts');
 
 function parseArgs(argv) {
-  const out = { in: '', out: '', shots: '', title: 'Тестовая книга', genre: 'fantasy' };
+  const out = { in: '', out: '', shots: '', title: 'Тестовая книга', genre: 'fantasy', illustrations: 'with', compression: 'off' };
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--in') out.in = argv[++i];
     else if (argv[i] === '--out') out.out = argv[++i];
     else if (argv[i] === '--shots') out.shots = argv[++i];
     else if (argv[i] === '--title') out.title = argv[++i];
     else if (argv[i] === '--genre') out.genre = argv[++i];
+    else if (argv[i] === '--illustrations') out.illustrations = argv[++i];
+    else if (argv[i] === '--image-compression') out.compression = argv[++i];
   }
   return out;
 }
@@ -43,6 +45,7 @@ function registerIpc(win) {
   ipcMain.handle('book:analyze', async (_e, paths) => pipeline.analyze(paths, send));
   ipcMain.handle('book:applyEdits', async (_e, edits) => pipeline.applyEdits(edits));
   ipcMain.handle('book:build', async (_e, opts) => pipeline.build(opts, send));
+  ipcMain.handle('book:previewFrontMatter', async (_e, opts) => require('../src/core/pdf/front-matter-preview').previewFrontMatter(opts));
   ipcMain.handle('asset:dataUrl', async (_e, id) => pipeline.assetDataUrl(id));
   ipcMain.handle('style:defaults', async () => ({
     style: DEFAULT_STYLE,
@@ -56,6 +59,9 @@ function registerIpc(win) {
   }
   ipcMain.handle('dialog:pickOutDir', async () => args.out);
   ipcMain.handle('output:getDirectory', async () => null);
+  const updateStatus={currentVersion:require('../package.json').version,enabled:false,status:'disabled',release:null,notify:false,checkedAt:0,message:''};
+  ipcMain.handle('updates:status',()=>updateStatus);
+  ipcMain.handle('updates:check',()=>updateStatus);
   ipcMain.handle('shell:reveal', async () => {});
   ipcMain.handle('shell:open', async () => null);
   ipcMain.handle('shell:openExternal', async () => {});
@@ -135,11 +141,11 @@ app.whenReady().then(async () => {
       document.getElementById('styleAccent').dispatchEvent(new Event('input'));
       const colorUpdated = Boolean(document.querySelector('#genrePreview svg [stroke=\"#123456\"]'));
       select.dispatchEvent(new Event('change'));
-      return select.options.length === 10 && new Set(drawings).size === 10 && colorUpdated;
+      return select.options.length === ${GENRES.length} && new Set(drawings).size === ${GENRES.length} && colorUpdated;
     })()
   `);
   if (!genreCheck) problems.push('Выбор жанра или обновление образца не работает');
-  console.log('→ десять жанров и обновление образца: ' + (genreCheck ? 'OK' : 'ОШИБКА'));
+  console.log('→ жанры и обновление образца: ' + (genreCheck ? 'OK' : 'ОШИБКА'));
 
   console.log('→ разбор исходников');
   await win.webContents.executeJavaScript(
@@ -152,6 +158,9 @@ app.whenReady().then(async () => {
   await win.webContents.executeJavaScript(`
     document.getElementById('metaTitle').value = ${JSON.stringify(args.title)};
     document.getElementById('metaTitle').dispatchEvent(new Event('input'));
+    document.getElementById('illustrationVersion').value = ${JSON.stringify(args.illustrations)};
+    document.getElementById('illustrationVersion').dispatchEvent(new Event('change'));
+    document.getElementById('illustrationCompression').value = ${JSON.stringify(args.compression)};
     window.__pdfmaker.switchTab('audit');
   `);
   await sleep(400);
@@ -169,12 +178,22 @@ app.whenReady().then(async () => {
   console.log('состояние после разбора:', summary);
 
   console.log('→ сборка');
+  await win.webContents.executeJavaScript("document.getElementById('illustrationVersion').scrollIntoView({block:'center'})");
+  await shot(win, '3-output-settings');
   await win.webContents.executeJavaScript(`
     window.__pdfmaker.state.outDir = ${JSON.stringify(path.resolve(args.out))};
     document.getElementById('outDirLabel').textContent = window.__pdfmaker.state.outDir;
     window.__pdfmaker.runBuild();
   `);
+  await waitFor(win, 'Boolean(window.__pdfmaker.state.report) || document.getElementById("buildWarningsDialog").open', 900000, 'проверка состава и сборка книги');
+  if (await win.webContents.executeJavaScript('document.getElementById("buildWarningsDialog").open')) {
+    await sleep(400);
+    await shot(win, '3-build-warnings');
+    console.log('предупреждения перед сборкой:', await win.webContents.executeJavaScript('document.getElementById("buildWarningsList").textContent'));
+    await win.webContents.executeJavaScript('document.getElementById("confirmWarningBuild").click()');
+  }
   await waitFor(win, 'Boolean(window.__pdfmaker.state.report)', 900000, 'сборка книги');
+  await waitFor(win, '!window.__pdfmaker.state.busy', 60000, 'завершение сборки и первичного предпросмотра');
   await sleep(1200);
   await shot(win, '4-report');
 
@@ -198,7 +217,7 @@ app.whenReady().then(async () => {
   `);
   console.log('отчёт:', report);
   const failures = await win.webContents.executeJavaScript(`
-    Object.values(window.__pdfmaker.state.report.qa).filter(Boolean).flatMap(q=>q.checks.filter(c=>!c.ok).map(c=>c.name+': '+c.detail))
+    (window.__pdfmaker.state.report.versions || [window.__pdfmaker.state.report]).flatMap(r=>Object.values(r.qa).filter(Boolean).flatMap(q=>q.checks.filter(c=>!c.ok).map(c=>c.name+': '+c.detail)))
   `);
   problems.push(...failures);
 
@@ -212,6 +231,26 @@ app.whenReady().then(async () => {
   );
   await sleep(800);
   await shot(win, '5-preview');
+
+  if (args.illustrations === 'both') {
+    const check = await win.webContents.executeJavaScript(`
+      (() => {
+        const r = window.__pdfmaker.state.report;
+        return r.versions?.length === 2 && r.versions[1].stats.images === 0 &&
+          r.versions[1].epub.path.includes('_без_иллюстраций') &&
+          document.querySelectorAll('#reportContent [data-open]').length === 4 &&
+          document.getElementById('previewVersion').options.length === 2;
+      })()
+    `);
+    if (!check) problems.push('Отчёт или выбор предпросмотра двух версий не работает');
+    await win.webContents.executeJavaScript(`
+      document.getElementById('previewVersion').value = '1';
+      document.getElementById('previewVersion').dispatchEvent(new Event('change'));
+    `);
+    await waitFor(win,"document.querySelectorAll('#previewGrid img').length === window.__pdfmaker.state.report.versions[1].qa.pdf.visualSample.length",30000,'предпросмотр версии без иллюстраций');
+    await sleep(400);
+    await shot(win, '6-preview-without-illustrations');
+  }
 
   const logText = await win.webContents.executeJavaScript("document.getElementById('logContent').textContent");
   console.log('\n--- журнал приложения ---\n' + logText);
