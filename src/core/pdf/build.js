@@ -362,9 +362,22 @@ function drawTitlePage(doc, book, geom, style, ctx, sectionCount) {
     { text: 'Перевод выполнен командой ' },
     { text: book.team, b: true, link: book.teamUrl },
   ], 'serif', style.creditSize, geom, ctx);
-  // Keep the final credit line at its original footer position.
-  y = geom.contentBottom - mm(style.creditBottomMm) - (creditLines.length - 1) * style.creditSize * 1.45;
+  const appSize = 7.8;
+  const repoSize = 7.4;
+  const appLines = centeredLines([
+    { text: 'Создано в ' },
+    { text: 'PDFMaker Mobile', b: true, link: PDEF_URL },
+  ], 'sans', appSize, geom, ctx);
+  const repoLines = centeredLines([
+    { text: PDEF_URL.replace(/^https:\/\//, ''), link: PDEF_URL },
+  ], 'sans', repoSize, geom, ctx);
+  const appY = geom.contentBottom - (appLines.length * appSize + repoLines.length * repoSize) * 1.45;
+  // Reserve the application footer even when the translator's bottom offset is zero.
+  const lastCreditY = Math.min(geom.contentBottom - mm(style.creditBottomMm), appY - mm(3) - style.creditSize * 1.45);
+  y = lastCreditY - (creditLines.length - 1) * style.creditSize * 1.45;
   drawCenteredLines(doc, creditLines, y, style.creditSize, style.textColor, ctx, style.accent);
+  const repoY = drawCenteredLines(doc, appLines, appY, appSize, '#77737D', ctx, style.accent);
+  drawCenteredLines(doc, repoLines, repoY, repoSize, '#77737D', ctx, style.accent);
 }
 
 function drawTocPage(doc, entries, opts) {

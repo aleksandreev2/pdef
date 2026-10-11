@@ -116,8 +116,11 @@ test('failed Kindle conversion keeps a previous output and removes its temporary
   if(!await findConverter()) {t.skip('Calibre is not installed');return;}
   const dir=await fixture(t),input=path.join(dir,'broken.epub'),output=path.join(dir,'previous.mobi');
   await fs.writeFile(input,'not a zip');await fs.writeFile(output,'previous book');
-  const before=(await fs.readdir(os.tmpdir())).filter(n=>n.startsWith('pdfmaker-convert-')).sort();
+  const conversionTemp=path.join(dir,'conversion-temp');
+  await fs.mkdir(conversionTemp);
+  // Other test files also convert books in parallel; inspect only this test's workspace.
+  t.mock.method(os,'tmpdir',()=>conversionTemp);
   await assert.rejects(buildKindle({book:{chapters:[]},format:'mobi',epubPath:input,outPath:output}),/Не удалось создать MOBI/);
   assert.equal(await fs.readFile(output,'utf8'),'previous book');
-  assert.deepEqual((await fs.readdir(os.tmpdir())).filter(n=>n.startsWith('pdfmaker-convert-')).sort(),before);
+  assert.deepEqual(await fs.readdir(conversionTemp),[]);
 });
