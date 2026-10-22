@@ -151,7 +151,11 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
   const pageNumberOf = (localIndex) => contentStartIndex + localIndex + 1; // 1-based для показа
 
   /* ── 4. рендер по порядку ── */
-  const bookmarks = [];
+  let bookmarks = 0;
+  const addBookmark = (title) => {
+    doc.outline.addItem(title);
+    bookmarks += 1;
+  };
 
   // 4.1 Обложка — первая страница, без номера и колонтитула
   doc.addPage();
@@ -165,7 +169,7 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
   // 4.2 Титульная
   doc.addPage();
   doc.addNamedDestination('nav_title');
-  bookmarks.push({ title: 'Титульная страница', pageNumber: 1 });
+  addBookmark('Титульная страница');
   drawTitlePage(doc, book, geom, style, ctx, active.length);
 
   // 4.3 Оглавление
@@ -173,7 +177,7 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
     doc.addPage();
     if (p === 0) {
       doc.addNamedDestination('nav_toc');
-      bookmarks.push({ title: 'Оглавление', pageNumber: 2 });
+      addBookmark('Оглавление');
     }
     drawTocPage(doc, tocPages[p], {
       ctx,
@@ -189,7 +193,7 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
   // 4.4 Сведения о переводе
   doc.addPage();
   doc.addNamedDestination('nav_about');
-  bookmarks.push({ title: 'О переводе', pageNumber: translationPageIndex });
+  addBookmark('О переводе');
   drawTranslationPage(doc, book, geom, style, ctx);
   drawPlainFolio(doc, translationPageIndex + 1, ctx);
 
@@ -204,17 +208,12 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
     if (chId) {
       doc.addNamedDestination(`dest_${chId}`);
       const ch = active.find((c) => c.id === chId);
-      if (ch) bookmarks.push({ title: chapterLabel(ch), pageNumber: contentStartIndex + i });
+      if (ch) addBookmark(chapterLabel(ch));
     }
     renderPage(doc, pages[i], pageNumberOf(i), ctx);
     if (i % 25 === 0 || i === pages.length - 1) {
       onProgress({ phase: 'render', label: `Страница ${i + 1} из ${pages.length}`, done: i + 1, total: pages.length });
     }
-  }
-
-  /* ── 5. закладки ── */
-  for (const b of bookmarks) {
-    doc.outline.addItem(b.title, { pageNumber: b.pageNumber });
   }
 
   doc.end();
@@ -229,7 +228,7 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
     tocFirstPage: 3,
     firstContentPage: contentStartIndex + 1,
     chapterPages: Object.fromEntries([...chapterStarts].map(([id, idx]) => [id, pageNumberOf(idx)])),
-    bookmarks: bookmarks.length,
+    bookmarks,
     warnings,
     size: fs.statSync(outPath).size,
   };
