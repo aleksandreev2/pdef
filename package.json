@@ -1,7 +1,7 @@
 {
   "name": "pdfmaker-mobile",
   "productName": "PDFMaker Mobile",
-  "version": "3.3.1",
+  "version": "3.3.2",
   "description": "Сборка PDF, EPUB, FB2, MOBI, AZW3 и TXT из отдельных глав",
   "main": "src/main/main.js",
   "author": "Дом Некроманта",

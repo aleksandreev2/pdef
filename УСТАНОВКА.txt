@@ -4,7 +4,7 @@
 ОБЫЧНАЯ УСТАНОВКА НА WINDOWS
 ---------------------------
 1. Откройте https://github.com/aleksandreev2/pdef/releases/latest
-2. Скачайте PDFMaker-Mobile-3.3.1-Setup.exe и запустите его.
+2. Скачайте PDFMaker-Mobile-3.3.2-Setup.exe и запустите его.
 
 Windows 10/11, 64 бит. Шрифты, библиотеки и Calibre уже включены.
 Node.js и консоль для установленной программы не нужны.
