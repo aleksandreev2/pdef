@@ -31,6 +31,7 @@ function drawLine(doc, line, ox, y, size, color, ctx) {
   for (const seg of segments(line)) {
     const text = seg.words.map((w) => w.text).join(' ');
     doc.font(seg.fontKey).fontSize(size).fillColor(color);
+    const baseline = -doc._font.ascender * size / 1000;
 
     let wordSpacing = 0;
     if (seg.words.length > 1) {
@@ -53,15 +54,15 @@ function drawLine(doc, line, ox, y, size, color, ctx) {
     if (seg.fmt.u) opts.underline = true;
     if (seg.fmt.link) opts.link = seg.fmt.link;
     let x = ox + seg.words[0].x;
-    for (const part of ctx.fontParts(text, seg.fontKey)) {
+    for (const part of ctx.fontParts(text, seg.fontKey, ctx.onMissingGlyph)) {
       // PDFKit при wordSpacing обрезает крайние пробелы. Их ширину
       // переносим в координаты, чтобы стык с дополнительным шрифтом не слипался.
       const leading = (part.text.match(/^ +/) || [''])[0];
-      const drawText = part.text.trim();
+      const drawText = part.text.replace(/^ +| +$/g, '');
       const textWidth = ctx.measure(part.text, part.fontKey, size);
       const startX = x + ctx.measure(leading, part.fontKey, size) + leading.length * wordSpacing;
       doc.font(part.fontKey).fontSize(size).fillColor(color);
-      if (drawText) doc.text(drawText, startX, y, { ...opts,
+      if (drawText) doc.text(drawText, startX, y, { ...opts, baseline,
         textWidth: ctx.measure(drawText, part.fontKey, size), wordCount: drawText.split(/ +/).length });
       x += textWidth + (part.text.match(/ /g) || []).length * wordSpacing;
     }

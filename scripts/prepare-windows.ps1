@@ -36,6 +36,5 @@ New-Item -ItemType Directory -Path $calibreDir -Force | Out-Null
 # Keep the complete official runtime: Python, Qt, DLLs and conversion plugins.
 Copy-Item -Path (Join-Path $portableDir '*') -Destination $calibreDir -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $portableDir 'LICENSE') -Destination (Join-Path $licenseDir 'Calibre-GPL.txt') -Force
-Copy-Item -LiteralPath (Join-Path $projectDir 'assets\fonts\OFL-PTSerif.txt') -Destination $licenseDir -Force
-Copy-Item -LiteralPath (Join-Path $projectDir 'assets\fonts\OFL-PTSans.txt') -Destination $licenseDir -Force
+Copy-Item -Path (Join-Path $projectDir 'assets\fonts\OFL-*.txt') -Destination $licenseDir -Force
 Write-Output 'Комплект готов: встроенный Calibre 9.15.0, исходный архив и лицензии шрифтов.'

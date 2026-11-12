@@ -47,7 +47,7 @@ function fontIndex() {
     for (const e of entries) {
       const full = path.join(dir, e.name);
       if (e.isDirectory()) walk(full, depth + 1);
-      else if (/\.(ttf|otf)$/i.test(e.name)) {
+      else if (/\.(ttf|otf|ttc)$/i.test(e.name)) {
         const key = e.name.toLowerCase();
         if (!index.has(key)) index.set(key, full);
       }
@@ -111,7 +111,23 @@ function resolveFamily(families, wanted) {
   return null;
 }
 
-/** @returns {{serif:object, sans:object, warnings:string[]}} */
+const PDF_FALLBACKS = [
+  { key: 'fallback', files: ['malgun.ttf', 'simhei.ttf', 'notosanscjk-regular.otf', 'arialuni.ttf'] },
+  { key: 'emoji', files: ['notoemoji.ttf', 'seguiemj.ttf'] },
+  { key: 'symbols', files: ['seguisym.ttf'] },
+  { key: 'notoSymbols', files: ['notosanssymbols2.ttf', 'noto-sans-symbols-2.ttf'] },
+  { key: 'egyptian', files: ['notosansegyptianhieroglyphs.ttf'] },
+  { key: 'kharoshthi', files: ['notosanskharoshthi.ttf'] },
+  { key: 'batak', files: ['notosansbatak.ttf'] },
+  { key: 'traditionalChinese', files: ['msjh.ttc'], face: 'MicrosoftJhengHeiRegular' },
+  { key: 'systemSans', files: ['segoeui.ttf', 'dejavusans.ttf'] },
+  { key: 'arial', files: ['arial.ttf'] },
+  { key: 'southAsian', files: ['nirmala.ttf'] },
+  { key: 'yi', files: ['msyi.ttf'] },
+  { key: 'canadian', files: ['gadugi.ttf'] },
+  { key: 'thai', files: ['leelawui.ttf', 'leelauib.ttf'] },
+];
+
 function resolveFonts(style = {}) {
   const warnings = [];
   const serif = resolveFamily(SERIF_FAMILIES, style.serif);
@@ -128,8 +144,10 @@ function resolveFonts(style = {}) {
   if (serif && serif.synthetic.italic) warnings.push(`У ${serif.name} нет курсивного начертания — курсив будет заменён прямым`);
 
   // Дополнительный шрифт нужен для иероглифов в названиях навыков.
-  const fallback = pick(fontIndex(), ['malgun.ttf', 'simhei.ttf', 'notosanscjk-regular.otf', 'arialuni.ttf']);
-  return { serif, sans, fallback, warnings };
+  const fallbacks = PDF_FALLBACKS.map(({ key, files, face }) => ({
+    key, file: pick(fontIndex(), files), face,
+  })).filter(({ file }) => file);
+  return { serif, sans, fallbacks, warnings };
 }
 
 /** Список доступных семейств для выпадающих списков в UI. */

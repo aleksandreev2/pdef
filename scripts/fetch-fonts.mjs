@@ -26,8 +26,18 @@ const FILES = [
   ['ptsans/PT_Sans-Web-Bold.ttf', 'PTSans-Bold.ttf'],
   ['ptsans/PT_Sans-Web-Italic.ttf', 'PTSans-Italic.ttf'],
   ['ptsans/PT_Sans-Web-BoldItalic.ttf', 'PTSans-BoldItalic.ttf'],
+  ['notoemoji/NotoEmoji%5Bwght%5D.ttf', 'NotoEmoji.ttf'],
+  ['notosanssymbols2/NotoSansSymbols2-Regular.ttf', 'NotoSansSymbols2.ttf'],
+  ['notosansegyptianhieroglyphs/NotoSansEgyptianHieroglyphs-Regular.ttf', 'NotoSansEgyptianHieroglyphs.ttf'],
+  ['notosanskharoshthi/NotoSansKharoshthi-Regular.ttf', 'NotoSansKharoshthi.ttf'],
+  ['notosansbatak/NotoSansBatak-Regular.ttf', 'NotoSansBatak.ttf'],
   ['ptserif/OFL.txt', 'OFL-PTSerif.txt'],
   ['ptsans/OFL.txt', 'OFL-PTSans.txt'],
+  ['notoemoji/OFL.txt', 'OFL-NotoEmoji.txt'],
+  ['notosanssymbols2/OFL.txt', 'OFL-NotoSansSymbols2.txt'],
+  ['notosansegyptianhieroglyphs/OFL.txt', 'OFL-NotoSansEgyptianHieroglyphs.txt'],
+  ['notosanskharoshthi/OFL.txt', 'OFL-NotoSansKharoshthi.txt'],
+  ['notosansbatak/OFL.txt', 'OFL-NotoSansBatak.txt'],
 ];
 
 await fs.mkdir(outDir, { recursive: true });

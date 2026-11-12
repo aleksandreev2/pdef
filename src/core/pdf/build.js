@@ -42,6 +42,7 @@ function plural(n, one, few, many) {
 async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) {
   const geom = geometry(style);
   const warnings = [];
+  const missingGlyphs = new Set();
 
   const doc = new PDFDocument({
     size: [geom.pageW, geom.pageH],
@@ -91,7 +92,10 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
     return dims;
   };
 
-  const ctx = { style, geom, measure, fontParts: measurer.parts, assets: book.assets, book, warnings, imageSize };
+  const ctx = {
+    style, geom, measure, fontParts: measurer.parts, assets: book.assets, book, warnings, imageSize,
+    onMissingGlyph: (codePoint) => missingGlyphs.add(codePoint),
+  };
 
   /* ── 1. поток глав ── */
   const active = book.chapters.filter((c) => c.include && c.blocks.length);
@@ -218,6 +222,11 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
 
   doc.end();
   await done;
+
+  if (missingGlyphs.size) {
+    const codes = [...missingGlyphs].sort((a, b) => a - b).map(cp => `U+${cp.toString(16).toUpperCase().padStart(4, '0')}`);
+    warnings.push(`В шрифтах PDF отсутствуют символы: ${codes.join(', ')}`);
+  }
 
   const totalPages = contentStartIndex + pages.length;
   return {

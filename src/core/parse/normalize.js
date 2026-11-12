@@ -7,7 +7,8 @@
  */
 
 const SOFT_HYPHEN = /­/g;
-const ZERO_WIDTH = /[​‌‍⁠﻿]/g;
+// ZWNJ, ZWJ and WORD JOINER affect shaping or line breaks.
+const ZERO_WIDTH = /[\u200B\uFEFF]/g;
 // Управляющие символы, кроме \t и \n
 const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
 

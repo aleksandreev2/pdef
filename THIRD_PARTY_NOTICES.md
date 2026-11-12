@@ -6,6 +6,7 @@
 | Компонент | Лицензия и авторство | Где находится полный текст |
 | --- | --- | --- |
 | PT Serif, PT Sans | SIL Open Font License 1.1; © 2010 ParaType Ltd. | [PT Serif](assets/fonts/OFL-PTSerif.txt), [PT Sans](assets/fonts/OFL-PTSans.txt) |
+| Резервные шрифты Noto | SIL Open Font License 1.1 | [Emoji](assets/fonts/OFL-NotoEmoji.txt), [Symbols 2](assets/fonts/OFL-NotoSansSymbols2.txt), [Egyptian Hieroglyphs](assets/fonts/OFL-NotoSansEgyptianHieroglyphs.txt), [Kharoshthi](assets/fonts/OFL-NotoSansKharoshthi.txt), [Batak](assets/fonts/OFL-NotoSansBatak.txt) |
 | Calibre 9.15.0 | GNU GPL v3; Kovid Goyal и участники проекта | В Windows-сборке: `resources/licenses/Calibre-GPL.txt` и архив исходников `calibre-9.15.0.tar.xz` |
 | Схема FictionBook | BSD-2-Clause; © 2004 Dmitry Gribov | [Лицензия схемы FB2](assets/schemas/fb2/LICENSE.md) |
 | Electron и Chromium | Лицензия Electron и уведомления компонентов Chromium | В установленной программе: `LICENSE.electron.txt`, `LICENSES.chromium.html` |

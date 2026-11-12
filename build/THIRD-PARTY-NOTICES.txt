@@ -13,6 +13,11 @@ PT Serif and PT Sans, copyright 2010 ParaType Ltd.
 License: SIL Open Font License 1.1.
 Full notices: resources/licenses/OFL-PTSerif.txt and OFL-PTSans.txt.
 
+Noto Emoji, Noto Sans Symbols 2, Noto Sans Egyptian Hieroglyphs,
+Noto Sans Kharoshthi and Noto Sans Batak.
+License: SIL Open Font License 1.1.
+Full notices: resources/licenses/OFL-Noto*.txt.
+
 Electron includes its license and Chromium third-party notices alongside the
 application executable (LICENSE.electron.txt and LICENSES.chromium.html).
 JavaScript library licenses are retained with their packages in resources/app.asar.

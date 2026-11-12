@@ -2,6 +2,10 @@
 
 const { splitToFit } = require('./hyphenate');
 
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+const ignorable = /\p{Default_Ignorable_Code_Point}/u;
+const emojiPresentation = /\p{Emoji_Presentation}|\uFE0F/u;
+
 /** Во сколько раз пробел может растянуться, прежде чем строка уйдёт влево. */
 const MAX_SPACE_STRETCH = 2.35;
 
@@ -29,7 +33,12 @@ function createMeasurer(doc, fonts) {
   doc.registerFont(FONT.sans, fonts.sans.regular);
   doc.registerFont(FONT.sansB, fonts.sans.bold);
   doc.registerFont(FONT.sansI, fonts.sans.italic);
-  if (fonts.fallback) doc.registerFont('fallback', fonts.fallback);
+  const fallbacks = fonts.fallbacks || [];
+  const fallbackKeys = fallbacks.map(({ key, file, face }) => {
+    doc.registerFont(key, file, face);
+    return key;
+  });
+  const hasEmojiFont = fallbackKeys.includes('emoji');
 
   const cache = new Map();
   const coverage = new Map();
@@ -41,14 +50,37 @@ function createMeasurer(doc, fonts) {
     }
     return coverage.get(key);
   }
-  function parts(text, fontKey) {
-    if (!fonts.fallback || fontKey === 'fallback') return [{ text, fontKey }];
+  function chooseFont(chars, fontKey, preferEmoji) {
+    const covers = (key) => chars.every(char => supports(key, char));
+    if (preferEmoji && hasEmojiFont && covers('emoji')) return 'emoji';
+    if (covers(fontKey)) return fontKey;
+    return fallbackKeys.find(covers);
+  }
+
+  function parts(text, fontKey, onMissing) {
     const out = [];
-    for (const char of text) {
-      const key = supports(fontKey, char) || !supports('fallback', char) ? fontKey : 'fallback';
-      const last = out[out.length-1];
-      if (last && last.fontKey === key) last.text += char;
-      else out.push({ text: char, fontKey: key });
+    const append = (value, key) => {
+      const last = out[out.length - 1];
+      if (last && last.fontKey === key) last.text += value;
+      else out.push({ text: value, fontKey: key });
+    };
+    for (const { segment } of graphemes.segment(text)) {
+      const chars = [...segment].filter(char => !ignorable.test(char));
+      const key = chars.length
+        ? chooseFont(chars, fontKey, emojiPresentation.test(segment))
+        : out.at(-1)?.fontKey || fontKey;
+      if (key) {
+        append(segment, key);
+        continue;
+      }
+      // Preserve the supported parts of a cluster when no single face covers it.
+      for (const char of segment) {
+        const charFont = ignorable.test(char)
+          ? out.at(-1)?.fontKey || fontKey
+          : chooseFont([char], fontKey, emojiPresentation.test(char));
+        if (!charFont) onMissing?.(char.codePointAt(0));
+        append(char, charFont || fontKey);
+      }
     }
     return out;
   }
