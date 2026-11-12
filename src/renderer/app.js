@@ -21,6 +21,7 @@ const state = {
   stats: null,
   coverCandidates: [],
   cover: null,
+  coverChoice: undefined,
   coverDataUrl: null,
   outDir: null,
   report: null,
@@ -104,6 +105,8 @@ function setBusy(busy, label) {
   state.busy = busy;
   $('chapterBody').inert = busy;
   $('chapterTools').inert = busy;
+  $('coverSelect').disabled = busy;
+  $('pickCoverBtn').disabled = busy;
   $('buildBtn').disabled = busy || !state.chapters.some((c) => c.include) || !hasFormat();
   OUTPUT_FORMATS.forEach(key=>{formatInput(key).disabled=busy;});
   ['illustrationVersion','illustrationCompression','illustrationKeepCover'].forEach(id=>{$(id).disabled=busy;});
@@ -151,8 +154,11 @@ async function runAnalysis() {
     state.order = previousOrder.map(key => newIds.get(key)).filter(Boolean);
     const patches = imported.summary.chapters.filter(ch => chapterEdits.has(ch.sourceKey))
       .map(ch => ({ id: ch.id, ...chapterEdits.get(ch.sourceKey) }));
-    const result = patches.length || state.order.length || state.sortByNumber
-      ? await api.applyEdits({ chapters: patches, order: state.order, sortByNumber: state.sortByNumber })
+    const automaticCover = imported.cover?.assetId ?? null;
+    const rememberedCover = imported.coverCandidates.find(c => c.hash === state.coverChoice);
+    const cover = state.coverChoice === null ? null : rememberedCover?.assetId ?? automaticCover;
+    const result = patches.length || state.order.length || state.sortByNumber || cover !== automaticCover
+      ? await api.applyEdits({ chapters: patches, order: state.order, sortByNumber: state.sortByNumber, cover })
       : imported;
     if (imported.suggestedTitle && !$('metaTitle').value.trim()) $('metaTitle').value = imported.suggestedTitle;
     state.chapters = result.summary.chapters;
@@ -160,7 +166,7 @@ async function runAnalysis() {
     state.sourceWarnings = result.sourceWarnings || [];
     state.stats = result.stats;
     state.coverCandidates = imported.coverCandidates;
-    state.cover = imported.cover ? imported.cover.assetId : null;
+    state.cover = cover;
 
     renderChapters();
     renderAudit();
@@ -440,7 +446,9 @@ async function syncEdits() {
     cover: state.cover,
   });
   if (revision !== editRevision) return;
+  const labels = new Map(state.chapters.map(ch => [ch.id, ch.label]));
   state.chapters = result.summary.chapters;
+  if (state.chapters.some(ch => ch.label !== labels.get(ch.id))) renderCoverOptions();
   state.stats = result.stats;
   state.audit = result.audit;
   state.sourceWarnings = result.sourceWarnings || [];
@@ -554,42 +562,62 @@ function renderAudit() {
 function renderCoverOptions() {
   const select = $('coverSelect');
   select.innerHTML = '<option value="">— не выбрана —</option>';
+  const chapters = new Map(state.chapters.map(ch => [ch.id, ch.label]));
+  const groups = [document.createElement('optgroup'), document.createElement('optgroup')];
+  groups[0].label = 'Отдельные файлы и обложки';
+  groups[1].label = 'Иллюстрации из глав';
   for (const c of state.coverCandidates) {
     const opt = document.createElement('option');
     opt.value = c.assetId;
-    opt.textContent = `${c.name} — ${c.source}`;
-    select.appendChild(opt);
+    opt.textContent = c.chapterId ? `${chapters.get(c.chapterId) ?? c.source} — ${c.name}` : c.name;
+    opt.title = c.sourcePath || '';
+    groups[c.chapterId ? 1 : 0].appendChild(opt);
   }
+  for (const group of groups) if (group.childElementCount) select.appendChild(group);
   if (state.cover) select.value = state.cover;
 }
 
+async function chooseCover(candidate) {
+  state.cover = candidate?.assetId ?? null;
+  state.coverChoice = candidate?.hash ?? null;
+  $('coverSelect').value = state.cover ?? '';
+  pushEdits();
+  if (await refreshCoverPreview()) await applyAccentFromCover(true);
+}
+
+let coverPreviewRevision = 0;
 async function refreshCoverPreview() {
   const box = $('coverPreview');
-  box.innerHTML = '';
+  const revision = ++coverPreviewRevision;
+  state.coverDataUrl = null;
   if (!state.cover) {
-    state.coverDataUrl = null;
     box.innerHTML = '<span>нет обложки</span>';
-    return;
+    return false;
   }
+  box.innerHTML = '<span>Загрузка…</span>';
   const dataUrl = await api.assetDataUrl(state.cover);
+  if (revision !== coverPreviewRevision) return false;
   state.coverDataUrl = dataUrl;
   if (!dataUrl) {
     box.innerHTML = '<span>не удалось показать</span>';
-    return;
+    return false;
   }
   const img = document.createElement('img');
   img.src = dataUrl;
   img.alt = 'Обложка';
-  box.appendChild(img);
+  box.replaceChildren(img);
+  return true;
 }
 
 async function applyAccentFromCover(silent) {
-  if (!state.coverDataUrl) {
+  const dataUrl = state.coverDataUrl;
+  if (!dataUrl) {
     if (!silent) log('Обложка не выбрана — акцент из неё взять нельзя');
     return;
   }
   try {
-    const hex = await accentFromImage(state.coverDataUrl);
+    const hex = await accentFromImage(dataUrl);
+    if (dataUrl !== state.coverDataUrl) return;
     if (hex) {
       $('styleAccent').value = hex;
       $('styleAccent').dispatchEvent(new Event('input'));
@@ -962,6 +990,7 @@ async function init() {
     state.sourceWarnings = [];
     state.stats = null;
     state.cover = null;
+    state.coverChoice = undefined;
     state.coverCandidates = [];
     renderSourceList();
     renderChapters();
@@ -980,21 +1009,12 @@ async function init() {
     if (!file) return;
     await addSources([file]);
     // Файл обложки попадает в ресурсы при разборе — выбираем его в списке.
-    const found = state.coverCandidates.find((c) => c.path === file || c.name === file.split(/[\\/]/).pop());
-    if (found) {
-      state.cover = found.assetId;
-      $('coverSelect').value = found.assetId;
-      await refreshCoverPreview();
-      await applyAccentFromCover(true);
-      pushEdits();
-    }
+    const found = state.coverCandidates.find(c => c.paths?.includes(file));
+    if (found) await chooseCover(found);
   });
 
   $('coverSelect').addEventListener('change', async (e) => {
-    state.cover = e.target.value || null;
-    await refreshCoverPreview();
-    if (state.cover) await applyAccentFromCover(true);
-    pushEdits();
+    await chooseCover(state.coverCandidates.find(c => c.assetId === e.target.value));
   });
 
   $('accentAutoBtn').addEventListener('click', () => applyAccentFromCover(false));

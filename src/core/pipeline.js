@@ -65,18 +65,32 @@ async function analyze(paths, onProgress = () => {}) {
   book.audit = audit;
   book.stats = stats;
 
-  // Кандидаты на обложку: отдельные картинки рядом + первая иллюстрация галереи.
-  const galleries = chapters.filter(c => c.kind === KIND.COVER_GALLERY)
-    .flatMap(c => {
-      const first = c.blocks.find(b => b.type === 'image');
-      return first ? [{ assetId: first.assetId, name: 'первая иллюстрация галереи', source: c.sourceName }] : [];
-    });
-  const coverCandidates = [
-    ...loose.map((l) => ({ assetId: l.assetId, name: l.name, source: 'файл рядом с главами' })),
-    ...galleries,
-  ];
-  if (galleries.length) book.cover = { assetId: galleries[0].assetId };
-  else if (loose.length) book.cover = { assetId: loose[0].assetId };
+  const covers = new Map();
+  function addCover(assetId, details) {
+    if (!covers.has(assetId)) covers.set(assetId, { assetId, hash: assets.get(assetId).hash, ...details });
+  }
+  for (const { assetId, name, path: sourcePath } of loose) {
+    addCover(assetId, { name, sourcePath, paths: [] });
+    covers.get(assetId).paths.push(sourcePath);
+  }
+  let galleryCover;
+  for (const chapter of chapters) {
+    let number = 0;
+    for (const block of chapter.blocks) {
+      if (block.type !== 'image' || !assets.has(block.assetId)) continue;
+      number += 1;
+      if (chapter.kind === KIND.COVER_GALLERY) galleryCover ??= block.assetId;
+      const caption = block.alt?.trim();
+      addCover(block.assetId, {
+        name: `Иллюстрация ${number}${caption ? ` · ${caption}` : ''}`,
+        source: chapterLabel(chapter),
+        sourcePath: chapter.sourceFile,
+        chapterId: chapter.id,
+      });
+    }
+  }
+  const defaultCover = galleryCover ?? loose[0]?.assetId;
+  if (defaultCover) book.cover = { assetId: defaultCover };
 
   session.book = book;
   session.loose = loose;
@@ -89,7 +103,7 @@ async function analyze(paths, onProgress = () => {}) {
     stats,
     warnings,
     sourceWarnings: auditWarnings(audit),
-    coverCandidates,
+    coverCandidates: [...covers.values()],
     cover: book.cover,
     fonts: resolveFonts({}).warnings,
   };

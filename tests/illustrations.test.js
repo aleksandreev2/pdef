@@ -6,7 +6,7 @@ const path=require('node:path');
 const os=require('node:os');
 const JSZip=require('jszip');
 const {createCanvas,loadImage}=require('@napi-rs/canvas');
-const {analyze,build,getSession}=require('../src/core/pipeline');
+const {analyze,applyEdits,build,getSession}=require('../src/core/pipeline');
 const {makeChapter,KIND}=require('../src/core/model');
 
 async function fixture(t) {
@@ -45,6 +45,46 @@ async function epub(file) {
   const texts=await Promise.all(Object.keys(zip.files).filter(n=>n.endsWith('.xhtml')).map(n=>zip.file(n).async('string')));
   return {zip,images,text:texts.join('\n')};
 }
+
+test('any imported chapter illustration can become the cover, including a later WebP', async t => {
+  const parent = await fs.realpath(os.tmpdir());
+  const dir = await fs.mkdtemp(path.join(parent, 'pdfmaker-cover-test-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const canvas = createCanvas(32, 54);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#23517f';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const first = await canvas.encode('png');
+  ctx.fillStyle = '#8a3716';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const second = await canvas.encode('webp');
+  const source = path.join(dir, 'book.fb2');
+  await fs.writeFile(source, `<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
+    <body>
+      <section><title><p>Глава 1. Трамвай</p></title><p>Первая глава книги.</p>
+        <image l:href="#first"/><image l:href="#second" title="Вечерний город"/></section>
+      <section><title><p>Глава 2. Улица</p></title><p>Вторая глава книги.</p><image l:href="#second"/></section>
+    </body>
+    <binary id="first" content-type="image/png">${first.toString('base64')}</binary>
+    <binary id="second" content-type="image/webp">${second.toString('base64')}</binary>
+  </FictionBook>`);
+  const result = await analyze([source]);
+  assert.equal(result.cover, null, 'body illustrations do not automatically replace the cover');
+  assert.equal(result.coverCandidates.length, 2, 'reused illustrations are listed once');
+  const selected = result.coverCandidates[1];
+  assert.match(selected.name, /2/);
+  assert.match(selected.source, /Трамвай/);
+  applyEdits({ chapters: [{ id: result.summary.chapters[0].id, include: false }], cover: selected.assetId });
+  const report = await build({
+    meta: { title: 'Проверка обложки' }, outDir: dir, formats: { pdf: true, epub: true },
+    illustrations: { version: 'without', keepCover: true },
+  });
+  const out = await epub(report.epub.path);
+  assert.deepEqual(out.images, ['EPUB/images/cover.webp']);
+  assert.deepEqual(await out.zip.file(out.images[0]).async('nodebuffer'), second);
+  assert.equal(report.qa.pdf.checks.find(check => check.name.includes('Обложка одна')).ok, true);
+  assert.equal(report.pdf.warnings.some(warning => warning.startsWith('Обложка не вставлена')), false);
+});
 
 test('without illustrations removes body images and empty galleries, keeping cover and text',async t=>{
   const {opts,book,data}=await fixture(t);

@@ -5,6 +5,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const os=require('node:os');
+const {createCanvas}=require('@napi-rs/canvas');
 const pipeline=require('../src/core/pipeline');
 const {DEFAULT_STYLE,LIMITS}=require('../src/core/style');
 const {GENRES}=require('../src/core/genres');
@@ -124,6 +125,34 @@ app.whenReady().then(async()=>{
   assert.equal(edited.include, false);
   await shot('3-chapter-editor');
   console.log('OK: editable title and number, chapter type and selection survive adding another source.');
+
+  const canvas=createCanvas(20,30);
+  const ctx=canvas.getContext('2d');
+  const pictures=[];
+  for(const color of ['#274968','#7d5134','#2a704a']) {
+    ctx.fillStyle=color;
+    ctx.fillRect(0,0,20,30);
+    pictures.push(await canvas.encode('png'));
+  }
+  const illustrated=path.join(dir,'illustrated.fb2');
+  await fs.writeFile(illustrated,`<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
+    <body><section><title><p>Глава 8. Город</p></title><p>Город на рассвете.</p><image l:href="#first"/><image l:href="#second"/></section></body>
+    <binary id="first" content-type="image/png">${pictures[0].toString('base64')}</binary>
+    <binary id="second" content-type="image/png">${pictures[1].toString('base64')}</binary></FictionBook>`);
+  await js(`window.__pdfmaker.addSources([${JSON.stringify(illustrated)}])`);
+  assert.equal(await js('document.querySelectorAll("#coverSelect optgroup option").length'),2);
+  await js(`const coverSelect=document.getElementById('coverSelect');
+    coverSelect.value=[...coverSelect.options].find(option=>option.textContent.includes('Иллюстрация 2')).value;
+    coverSelect.dispatchEvent(new Event('change',{bubbles:true}));`);
+  await wait('document.querySelector("#coverPreview img")?.complete');
+  const assetBefore=await js('window.__pdfmaker.state.cover');
+  const extraCover=path.join(dir,'new-cover.png');
+  await fs.writeFile(extraCover,pictures[2]);
+  await js(`window.__pdfmaker.addSources([${JSON.stringify(extraCover)}])`);
+  assert.notEqual(await js('window.__pdfmaker.state.cover'),assetBefore,'new input must remap asset IDs in this fixture');
+  assert.ok(await js('document.querySelector("#coverSelect option:checked").textContent.includes("Иллюстрация 2")'));
+  assert.deepEqual(pipeline.getSession().book.assets.get(pipeline.getSession().book.cover.assetId).data,pictures[1]);
+  console.log('OK: the second chapter illustration stays selected after cover IDs change on import.');
   assert.deepEqual(errors,[],'renderer errors');
 }).then(()=>finish(0)).catch(e=>{console.error(e);finish(1);});
 async function finish(code) {

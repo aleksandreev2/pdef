@@ -163,7 +163,7 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
   // 4.1 Обложка — первая страница, без номера и колонтитула
   doc.addPage();
   if (hasCover) {
-    drawCover(doc, book, geom, warnings, style);
+    if (!await drawCover(doc, book, geom, warnings, style)) drawTypographicCover(doc, book, geom, style, ctx);
   } else {
     drawTypographicCover(doc, book, geom, style, ctx);
     warnings.push('Изображение обложки не задано — собрана типографическая обложка');
@@ -244,14 +244,14 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
 
 /* ─────────────────────────── страницы фронт-матера ─────────────────────────── */
 
-function drawCover(doc, book, geom, warnings, style) {
+async function drawCover(doc, book, geom, warnings, style) {
   const asset = book.assets.get(book.cover.assetId);
   if (!asset) {
     warnings.push('Файл обложки не найден среди ресурсов');
-    return;
+    return false;
   }
   try {
-    const img = doc.openImage(asset.data);
+    const img = await openCoverImage(doc, asset);
     const pageRatio = geom.pageW / geom.pageH;
     const imgRatio = img.width / img.height;
     const nearly = Math.abs(imgRatio - pageRatio) / pageRatio < 0.08;
@@ -265,13 +265,37 @@ function drawCover(doc, book, geom, warnings, style) {
         h = geom.pageH;
         w = h * imgRatio;
       }
-      doc.image(asset.data, (geom.pageW - w) / 2, (geom.pageH - h) / 2, { width: w, height: h });
+      doc.image(img, (geom.pageW - w) / 2, (geom.pageH - h) / 2, { width: w, height: h });
     } else {
       doc.rect(0, 0, geom.pageW, geom.pageH).fillColor('#FFFFFF').fill();
-      doc.image(asset.data, 0, 0, { fit: [geom.pageW, geom.pageH], align: 'center', valign: 'center' });
+      doc.image(img, 0, 0, { fit: [geom.pageW, geom.pageH], align: 'center', valign: 'center' });
     }
+    return true;
   } catch (e) {
     warnings.push(`Обложка не вставлена: ${e.message}`);
+    return false;
+  }
+}
+
+async function openCoverImage(doc, asset) {
+  try {
+    return doc.openImage(asset.data);
+  } catch (originalError) {
+    if (asset.ext === 'svg') {
+      const { Resvg } = require('@resvg/resvg-js');
+      const png = new Resvg(asset.data, {
+        fitTo: { mode: 'width', value: 1200 },
+        font: { loadSystemFonts: false },
+      }).render().asPng();
+      return doc.openImage(png);
+    }
+    if (!['webp', 'gif', 'bmp', 'avif', 'ico'].includes(asset.ext)) throw originalError;
+    const { createCanvas, loadImage } = require('@napi-rs/canvas');
+    const image = await loadImage(asset.data);
+    const scale = Math.min(1, 2400 / Math.max(image.width, image.height));
+    const canvas = createCanvas(Math.max(1, Math.round(image.width * scale)), Math.max(1, Math.round(image.height * scale)));
+    canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+    return doc.openImage(await canvas.encode('png'));
   }
 }
 
