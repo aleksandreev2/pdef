@@ -273,8 +273,13 @@ async function buildVersion(opts, onProgress, book, outDir, version) {
 
   await fs.mkdir(outDir, { recursive: true });
   const base = outputBaseName(book) + (version === 'without' ? '_без_иллюстраций' : '');
-  const pdfPath = path.join(outDir, `${base}.pdf`);
-  const epubPath = path.join(outDir, `${base}.epub`);
+  const fb2Compatibility = opts.fb2Compatibility === true;
+  const exportPath = format => {
+    const suffix = format === 'fb2' && fb2Compatibility ? '_для_старых_читалок' : '';
+    return path.join(outDir, `${base}${suffix}.${format}`);
+  };
+  const pdfPath = exportPath('pdf');
+  const epubPath = exportPath('epub');
 
   const wantPdf = formats.pdf;
   const wantEpub = formats.epub;
@@ -295,15 +300,15 @@ async function buildVersion(opts, onProgress, book, outDir, version) {
         : Promise.resolve(null),
     );
     tasks.push(wantEpub || needKindle ? buildEpub({ book, style, outPath: kindleEpubPath, onProgress }) : Promise.resolve(null));
-    tasks.push(formats.fb2 ? buildFb2({book,style,outPath:path.join(outDir,base+'.fb2'),onProgress}) : Promise.resolve(null));
-    tasks.push(formats.txt ? buildTxt({book,outPath:path.join(outDir,base+'.txt'),onProgress}) : Promise.resolve(null));
+    tasks.push(formats.fb2 ? buildFb2({book,style,fonts,compatibility:fb2Compatibility,outPath:exportPath('fb2'),onProgress}) : Promise.resolve(null));
+    tasks.push(formats.txt ? buildTxt({book,outPath:exportPath('txt'),onProgress}) : Promise.resolve(null));
 
     const settled=await Promise.allSettled(tasks);
     const failure=settled.find(r=>r.status==='rejected');if(failure) throw failure.reason;
     const [pdfResult, epubResult, fb2Result, txtResult] = settled.map(r=>r.value);
     const extraResults={fb2:fb2Result,txt:txtResult};
     // Convert serially so long novels do not double Calibre's memory use.
-    for(const format of ['mobi','azw3']) if(formats[format]) extraResults[format]=await buildKindle({book,format,epubPath:kindleEpubPath,outPath:path.join(outDir,base+'.'+format),converter,onProgress});
+    for(const format of ['mobi','azw3']) if(formats[format]) extraResults[format]=await buildKindle({book,format,epubPath:kindleEpubPath,outPath:exportPath(format),converter,onProgress});
 
     /* ── QA: по одному проходу на формат, параллельно ── */
     onProgress({ phase: 'qa', label: 'Проверка готовых файлов' });
@@ -321,7 +326,7 @@ async function buildVersion(opts, onProgress, book, outDir, version) {
     ]);
     const extraQa={};
     await Promise.all(Object.entries(extraResults).filter(([,r])=>r).map(async([format])=>{
-      extraQa[format]=await checkExport(path.join(outDir,base+'.'+format),{book,format});
+      extraQa[format]=await checkExport(exportPath(format),{book,format});
     }));
 
     const report = {
@@ -343,7 +348,7 @@ async function buildVersion(opts, onProgress, book, outDir, version) {
         images: epubResult.images,
         warnings: epubResult.warnings,
       } : null,
-      ...Object.fromEntries(['fb2','mobi','azw3','txt'].map(format=>[format,extraResults[format] ? {path:path.join(outDir,base+'.'+format),...extraResults[format]} : null])),
+      ...Object.fromEntries(['fb2','mobi','azw3','txt'].map(format=>[format,extraResults[format] ? {path:exportPath(format),...extraResults[format]} : null])),
       stats: book.stats,
       audit: book.audit,
       sourceWarnings: auditWarnings(book.audit),

@@ -44,6 +44,26 @@ test('FB2 preserves cover, inline formatting, lists, links and image resources',
   const imported=await importSources([report.fb2.path]);assert.equal(imported.author,'Тестовый Автор');assert.equal(imported.language,'ru');
   assert.ok(imported.loose.length);assert.ok(imported.chapters[0].blocks.map(blockText).join(' ').includes('курсивный текст'));
 });
+
+test('FB2 compatibility exports supplementary graphemes inline and restores their text on import', async t => {
+  const dir = await fixture(t);
+  const text = '[002] — 🤨 🤭 🤨 👩🏽‍💻';
+  const file = path.join(dir, 'chapter.txt');
+  await fs.writeFile(file, `Глава 8. Проход\n\n${text}\n\n* * *\n\nПродолжение текста.`);
+  await analyze([file]);
+  const options = { meta: {}, outDir: dir, formats: { pdf: false, epub: false, fb2: true } };
+  const regular = await build(options);
+  assert.match(await fs.readFile(regular.fb2.path, 'utf8'), /🤨 🤭 🤨 👩🏽‍💻/u);
+  const report = await build({ ...options, fb2Compatibility: true });
+  const xml = await fs.readFile(report.fb2.path, 'utf8');
+  assert.equal(report.qa.fb2.ok, true, JSON.stringify(report.qa.fb2.checks));
+  assert.doesNotMatch(xml, /[\u{10000}-\u{10ffff}]/u);
+  assert.equal((xml.match(/<image l:href="#pdef-glyph-/g) || []).length, 4);
+  assert.equal((xml.match(/<binary id="pdef-glyph-/g) || []).length, 3);
+  assert.match(xml, /<p>\* \* \*<\/p>/);
+  const imported = await importSources([report.fb2.path]);
+  assert.ok(imported.chapters[0].blocks.some(block => blockText(block) === text));
+});
 test('export with no selected formats fails before creating files',async t=>{
   const dir=await fixture(t);
   await assert.rejects(build({meta:{},outDir:path.join(dir,'no-output'),formats:{pdf:false,epub:false,fb2:false,mobi:false,azw3:false,txt:false}}),/Выберите.*формат/i);

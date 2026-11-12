@@ -2,6 +2,7 @@
 const { XMLParser, XMLValidator } = require('fast-xml-parser');
 const iconv = require('iconv-lite');
 const { makeRun, runsText, KIND } = require('../model');
+const { readFb2Glyph } = require('../fb2-glyphs');
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@', preserveOrder: true, trimValues: false, parseTagValue: false, processEntities: true, ignoreDeclaration: true, ignorePiTags: true });
 const key = n => Object.keys(n).find(k => k !== ':@') || '';
 const tag = n => key(n).split(':').pop();
@@ -9,7 +10,11 @@ const kids = n => Array.isArray(n[key(n)]) ? n[key(n)] : [];
 const attrs = n => n[':@'] || {};
 const attr = (n,name) => Object.entries(attrs(n)).find(([k])=>k.replace(/^@/,'').split(':').pop()===name)?.[1];
 function find(n,name) { return kids(n).find(c=>tag(c)===name); }
-function text(n) { return tag(n)==='#text' ? String(n['#text']) : kids(n).map(text).join(''); }
+function text(n) {
+  if (tag(n)==='#text') return String(n['#text']);
+  if (tag(n)==='image') return readFb2Glyph(attr(n,'href')) || '';
+  return kids(n).map(text).join('');
+}
 function inline(n, fmt = {}) {
   const name = tag(n);
   if (name === '#text') return [makeRun(String(n['#text']), fmt)];
@@ -62,7 +67,13 @@ function parseFb2(buffer, addAsset) {
       const out = []; let runs = [];
       const flush = () => { if(runsText(runs).trim()) out.push({runs, ...(style ? {style} : {}), ...(name === 'subtitle' ? {style:'Heading3'} : {})}); runs=[]; };
       const visit = (node,fmt) => {
-        if (tag(node)==='image') { flush(); out.push(...paragraphs(node)); return; }
+        if (tag(node)==='image') {
+          const href = attr(node,'href');
+          const glyph = readFb2Glyph(href);
+          if (glyph && binaries.has(href.slice(1))) runs.push(makeRun(glyph, fmt));
+          else { flush(); out.push(...paragraphs(node)); }
+          return;
+        }
         if (tag(node)==='#text') { runs.push(...inline(node,fmt)); return; }
         const next={...fmt};
         if(tag(node)==='strong') next.b=true;

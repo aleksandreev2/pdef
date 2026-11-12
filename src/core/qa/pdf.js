@@ -68,7 +68,7 @@ async function checkPdf(pdfPath, { book, expected }) {
       images: imageOps,
       links,
       drawOps: ops.fnArray.length,
-      hasBadGlyphs: /�/.test(text),
+      hasBadGlyphs: /[\u0000\uFFFD]/u.test(text),
     });
     page.cleanup();
   }

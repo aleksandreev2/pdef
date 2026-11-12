@@ -109,6 +109,7 @@ function setBusy(busy, label) {
   $('pickCoverBtn').disabled = busy;
   $('buildBtn').disabled = busy || !state.chapters.some((c) => c.include) || !hasFormat();
   OUTPUT_FORMATS.forEach(key=>{formatInput(key).disabled=busy;});
+  $('fb2Compatibility').disabled = busy;
   ['illustrationVersion','illustrationCompression','illustrationKeepCover'].forEach(id=>{$(id).disabled=busy;});
   $('pickFilesBtn').disabled = busy;
   $('pickFolderBtn').disabled = busy;
@@ -676,11 +677,18 @@ function updateOutNameHint() {
     ? `${base}_главы_${String(nums[0]).padStart(3, '0')}-${String(nums[nums.length - 1]).padStart(3, '0')}`
     : `${base}_полное_издание`;
   const selected=OUTPUT_FORMATS.filter(key=>formatInput(key).checked);
+  const fb2Selected = selected.includes('fb2');
+  $('fb2CompatibilityRow').hidden = !fb2Selected;
+  $('fb2CompatibilityHelp').hidden = !fb2Selected || !$('fb2Compatibility').checked;
   const version = $('illustrationVersion').value;
   $('keepCoverRow').hidden = version === 'with';
   const suffixes = version === 'both' ? ['', '_без_иллюстраций'] : [version === 'without' ? '_без_иллюстраций' : ''];
   const destination = selected.length > 1 || version === 'both' ? 'В папке новеллы. ' : 'В выбранной папке. ';
-  $('outNameHint').textContent = selected.length ? `${destination}Файлы: ${suffixes.flatMap(suffix=>selected.map(key=>name+suffix+'.'+key)).join(' · ')}` : 'Выберите хотя бы один формат';
+  const names = suffixes.flatMap(suffix => selected.map(key => {
+    const compatibility = key === 'fb2' && $('fb2Compatibility').checked ? '_для_старых_читалок' : '';
+    return name + suffix + compatibility + '.' + key;
+  }));
+  $('outNameHint').textContent = names.length ? `${destination}Файлы: ${names.join(' · ')}` : 'Выберите хотя бы один формат';
 }
 
 async function chooseOutputDirectory() {
@@ -731,6 +739,7 @@ async function runBuild() {
       style: collectStyle(),
       outDir: state.outDir,
       formats: selectedFormats(),
+      fb2Compatibility: $('fb2Compatibility').checked,
       illustrations: {
         version: $('illustrationVersion').value,
         compression: $('illustrationCompression').value,
@@ -1030,6 +1039,7 @@ async function init() {
   }));
 
   $('illustrationVersion').addEventListener('change',updateOutNameHint);
+  $('fb2Compatibility').addEventListener('change',updateOutNameHint);
   $('previewVersion').addEventListener('change',showPreview);
 
   $('includeAllBtn').addEventListener('click', () => {

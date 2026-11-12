@@ -6,6 +6,7 @@
  *   node scripts/cli.js --in <путь|zip> [...] --out <папка> --title "Название"
  *                       [--team "Дом Некроманта"] [--url <ссылка>]
  *                       [--accent "#6E5A7B"] [--only pdf|epub|fb2|mobi|azw3|txt|all]
+ *                       [--fb2-compatibility]
  */
 
 const path = require('path');
@@ -32,6 +33,7 @@ function parseArgs(argv) {
       else args.compression = value;
     }
     else if (a === '--no-cover') args.keepCover = false;
+    else if (a === '--fb2-compatibility') args.fb2Compatibility = true;
   }
   return args;
 }
@@ -89,6 +91,7 @@ function bar(p) {
       style: { genre: args.genre, ...(args.accent ? { accent: args.accent } : {}) },
       outDir: path.resolve(args.out),
       formats,
+      fb2Compatibility: args.fb2Compatibility,
       illustrations: { version: args.illustrations, compression: args.compression, keepCover: args.keepCover },
     },
     onProgress,
