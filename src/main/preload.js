@@ -28,10 +28,12 @@ contextBridge.exposeInMainWorld('api', {
 
   analyze: (paths) => ipcRenderer.invoke('book:analyze', paths),
   applyEdits: (edits) => ipcRenderer.invoke('book:applyEdits', edits),
+  addCover: (file) => ipcRenderer.invoke('book:addCover', file),
+  clearBook: () => ipcRenderer.invoke('book:clear'),
   previewFrontMatter: (opts) => ipcRenderer.invoke('book:previewFrontMatter', opts),
   build: (opts) => ipcRenderer.invoke('book:build', opts),
 
-  assetDataUrl: (assetId) => ipcRenderer.invoke('asset:dataUrl', assetId),
+  assetThumbnail: (assetId) => ipcRenderer.invoke('asset:thumbnail', assetId),
   styleDefaults: () => ipcRenderer.invoke('style:defaults'),
 
   reveal: (filePath) => ipcRenderer.invoke('shell:reveal', filePath),

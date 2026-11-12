@@ -27,7 +27,6 @@ function segments(line) {
 }
 
 function drawLine(doc, line, ox, y, size, color, ctx) {
-  const normalSpace = ctx.measure(' ', FONT.serif, size);
   for (const seg of segments(line)) {
     const text = seg.words.map((w) => w.text).join(' ');
     doc.font(seg.fontKey).fontSize(size).fillColor(color);
@@ -48,8 +47,6 @@ function drawLine(doc, line, ox, y, size, color, ctx) {
     const opts = {
       lineBreak: false,
       wordSpacing,
-      textWidth: ctx.measure(text, seg.fontKey, size),
-      wordCount: seg.words.length,
     };
     if (seg.fmt.u) opts.underline = true;
     if (seg.fmt.link) opts.link = seg.fmt.link;
@@ -63,7 +60,8 @@ function drawLine(doc, line, ox, y, size, color, ctx) {
       const startX = x + ctx.measure(leading, part.fontKey, size) + leading.length * wordSpacing;
       doc.font(part.fontKey).fontSize(size).fillColor(color);
       if (drawText) doc.text(drawText, startX, y, { ...opts, baseline,
-        textWidth: ctx.measure(drawText, part.fontKey, size), wordCount: drawText.split(/ +/).length });
+        textWidth: drawText === part.text ? textWidth : ctx.measure(drawText, part.fontKey, size),
+        wordCount: drawText.split(/ +/).length });
       x += textWidth + (part.text.match(/ /g) || []).length * wordSpacing;
     }
   }
@@ -138,7 +136,7 @@ function drawImagePart(doc, part, ctx) {
   const asset = ctx.assets.get(part.assetId);
   if (!asset) return;
   try {
-    doc.image(asset.data, part.x, part.y, { width: part.w, height: part.h });
+    doc.image(ctx.openedImages.get(part.assetId) || asset.data, part.x, part.y, { width: part.w, height: part.h });
   } catch (e) {
     ctx.warnings.push(`Иллюстрация ${part.assetId} не вставлена: ${e.message}`);
   }

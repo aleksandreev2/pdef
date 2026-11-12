@@ -69,6 +69,7 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
 
   /* ── размеры изображений ── */
   const imgCache = new Map();
+  const openedImages = new Map();
   const imageSize = (assetId, srcW, srcH) => {
     if (imgCache.has(assetId)) return imgCache.get(assetId);
     const asset = book.assets.get(assetId);
@@ -76,6 +77,7 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
     if (asset) {
       try {
         const img = doc.openImage(asset.data);
+        openedImages.set(assetId, img);
         dims = { w: img.width, h: img.height };
         asset.pxW = img.width;
         asset.pxH = img.height;
@@ -88,7 +90,7 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
   };
 
   const ctx = {
-    style, geom, measure, fontParts: measurer.parts, assets: book.assets, book, warnings, imageSize,
+    style, geom, measure, fontParts: measurer.parts, assets: book.assets, book, warnings, imageSize, openedImages,
     onMissingGlyph: (codePoint) => missingGlyphs.add(codePoint),
   };
 
@@ -159,7 +161,7 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
   // 4.1 Обложка — первая страница, без номера и колонтитула
   doc.addPage();
   if (hasCover) {
-    if (!await drawCover(doc, book, geom, warnings, style)) drawTypographicCover(doc, book, geom, style, ctx);
+    if (!await drawCover(doc, book, geom, warnings, style, openedImages.get(book.cover.assetId))) drawTypographicCover(doc, book, geom, style, ctx);
   } else {
     drawTypographicCover(doc, book, geom, style, ctx);
     warnings.push('Изображение обложки не задано — собрана типографическая обложка');
@@ -199,17 +201,21 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
   // 4.5 Главы
   onProgress({ phase: 'render', label: 'Отрисовка страниц', done: 0, total: pages.length });
   const chapterByStart = new Map();
+  const chaptersById = new Map(active.map(chapter => [chapter.id, chapter]));
   for (const [chId, idx] of chapterStarts) chapterByStart.set(idx, chId);
+  const imagePages = [];
 
   for (let i = 0; i < pages.length; i += 1) {
     doc.addPage();
     const chId = chapterByStart.get(i);
     if (chId) {
       doc.addNamedDestination(`dest_${chId}`);
-      const ch = active.find((c) => c.id === chId);
+      const ch = chaptersById.get(chId);
       if (ch) addBookmark(chapterLabel(ch));
     }
-    renderPage(doc, pages[i], pageNumberOf(i), ctx);
+    const pageNumber = pageNumberOf(i);
+    if (pages[i].parts.some(part => part.t === 'image')) imagePages.push(pageNumber);
+    renderPage(doc, pages[i], pageNumber, ctx);
     if (i % 25 === 0 || i === pages.length - 1) {
       onProgress({ phase: 'render', label: `Страница ${i + 1} из ${pages.length}`, done: i + 1, total: pages.length });
     }
@@ -232,6 +238,7 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
     tocFirstPage: 3,
     firstContentPage: contentStartIndex + 1,
     chapterPages: Object.fromEntries([...chapterStarts].map(([id, idx]) => [id, pageNumberOf(idx)])),
+    imagePages,
     bookmarks,
     warnings,
     size: fs.statSync(outPath).size,
@@ -240,14 +247,14 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
 
 /* ─────────────────────────── страницы фронт-матера ─────────────────────────── */
 
-async function drawCover(doc, book, geom, warnings, style) {
+async function drawCover(doc, book, geom, warnings, style, openedImage) {
   const asset = book.assets.get(book.cover.assetId);
   if (!asset) {
     warnings.push('Файл обложки не найден среди ресурсов');
     return false;
   }
   try {
-    const img = await openCoverImage(doc, asset);
+    const img = openedImage || await openCoverImage(doc, asset);
     const pageRatio = geom.pageW / geom.pageH;
     const imgRatio = img.width / img.height;
     const nearly = Math.abs(imgRatio - pageRatio) / pageRatio < 0.08;

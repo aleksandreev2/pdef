@@ -2,6 +2,7 @@
 
 const jschardet = require('jschardet');
 const iconv = require('iconv-lite');
+const { isUtf8 } = require('node:buffer');
 const { makeRun } = require('../model');
 const { looksHardWrapped, unwrapLines, cleanInline } = require('../parse/normalize');
 
@@ -41,6 +42,13 @@ function decodeText(buffer) {
   }
   if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
     return { text: stripBom(iconv.decode(buffer, 'utf-8')), encoding: 'utf-8 (BOM)', guessConfidence: 1 };
+  }
+  if (isUtf8(buffer)) {
+    const text = buffer.toString('utf8');
+    // UTF-16 without a BOM can be valid UTF-8 bytes containing NULs/controls.
+    if (!/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(text)) {
+      return { text, encoding: 'utf-8', guessConfidence: 1 };
+    }
   }
 
   let detected = null;

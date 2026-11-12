@@ -1,6 +1,7 @@
 import { accentFromImage } from './accent.js';
 import { renderSample, forgetDocument, renderFrontMatter } from './pdf-preview.js';
 import { initUpdates } from './updates-ui.js';
+import { createChapterRows } from './chapter-rows.mjs';
 
 const api = window.api;
 const $ = (id) => document.getElementById(id);
@@ -30,7 +31,9 @@ const state = {
   sortByNumber: false,
 };
 const chapterEdits = new Map();
+const pendingChapterEdits = new Map();
 let editRevision = 0;
+let scheduleLayoutPreview = () => {};
 
 const KIND_LABEL = {
   chapter: 'Глава',
@@ -159,7 +162,7 @@ async function runAnalysis() {
     const rememberedCover = imported.coverCandidates.find(c => c.hash === state.coverChoice);
     const cover = state.coverChoice === null ? null : rememberedCover?.assetId ?? automaticCover;
     const result = patches.length || state.order.length || state.sortByNumber || cover !== automaticCover
-      ? await api.applyEdits({ chapters: patches, order: state.order, sortByNumber: state.sortByNumber, cover })
+      ? await api.applyEdits({ chapters: patches, order: state.order, sortByNumber: state.sortByNumber, cover, compact: true })
       : imported;
     if (imported.suggestedTitle && !$('metaTitle').value.trim()) $('metaTitle').value = imported.suggestedTitle;
     state.chapters = result.summary.chapters;
@@ -168,6 +171,7 @@ async function runAnalysis() {
     state.stats = result.stats;
     state.coverCandidates = imported.coverCandidates;
     state.cover = cover;
+    pendingChapterEdits.clear();
 
     renderChapters();
     renderAudit();
@@ -176,6 +180,7 @@ async function runAnalysis() {
     await refreshCoverPreview();
     // Акцент берётся из обложки сразу: один спокойный цвет на всю книгу.
     if (state.cover) await applyAccentFromCover(true);
+    scheduleLayoutPreview();
     updateOutNameHint();
 
     const a = result.audit;
@@ -222,6 +227,7 @@ function issueClass(text) {
 function rememberChapterEdit(chapter, patch) {
   Object.assign(chapter, patch);
   chapterEdits.set(chapter.sourceKey, { ...chapterEdits.get(chapter.sourceKey), ...patch });
+  pendingChapterEdits.set(chapter.id, { ...pendingChapterEdits.get(chapter.id), ...patch });
 }
 
 function chapterTextField(field, chapter, label, value, save) {
@@ -242,21 +248,127 @@ function chapterTextField(field, chapter, label, value, save) {
   return input;
 }
 
+function createChapterRow(ch) {
+  const tr = document.createElement('tr');
+  tr.dataset.id = ch.id;
+  if (!ch.include) tr.classList.add('off');
+
+  const on = document.createElement('td');
+  on.className = 'col-on';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.dataset.field = 'include';
+  cb.checked = ch.include;
+  cb.disabled = !ch.blocks;
+  cb.title = ch.blocks ? 'Включить раздел в книгу' : 'В разделе нет содержимого для экспорта';
+  cb.setAttribute('aria-label', `Включить раздел — ${ch.sourceName}`);
+  cb.addEventListener('change', () => {
+    rememberChapterEdit(ch, { include: cb.checked });
+    tr.classList.toggle('off', !cb.checked);
+    pushEdits();
+  });
+  on.appendChild(cb);
+
+  const num = document.createElement('td');
+  num.className = 'col-num';
+  const handle = document.createElement('span');
+  handle.className = 'drag-handle';
+  handle.draggable = true;
+  handle.title = 'Перетащить раздел';
+  handle.textContent = '⠿';
+  const number = chapterTextField('number', ch, 'Номер главы', ch.number === null ? '' : String(ch.number), field => {
+    const value = field.value.trim();
+    if (value && !/^\d{1,4}$/.test(value)) {
+      field.value = ch.number ?? '';
+      setStatus('Введите целый номер от 0 до 9999');
+      return;
+    }
+    rememberChapterEdit(ch, { number: value ? Number(value) : null });
+    pushEdits();
+  });
+  number.inputMode = 'numeric';
+  number.maxLength = 4;
+  number.placeholder = '—';
+  number.disabled = ch.kind !== 'chapter' || !ch.blocks;
+  const numberGroup = document.createElement('div');
+  numberGroup.className = 'chapter-number-group';
+  numberGroup.append(handle, number);
+  num.appendChild(numberGroup);
+
+  const title = document.createElement('td');
+  title.className = 'col-title';
+  const input = chapterTextField('title', ch, 'Название главы', ch.title, field => {
+    rememberChapterEdit(ch, { title: field.value.trim() });
+    pushEdits();
+  });
+  input.placeholder = 'Без названия';
+  input.disabled = !ch.blocks;
+  const source = document.createElement('small');
+  source.className = 'chapter-source';
+  source.textContent = ch.sourceName;
+  source.title = ch.sourcePath || ch.sourceName;
+  title.append(input, source);
+
+  const kind = document.createElement('td');
+  kind.className = 'col-kind';
+  const type = document.createElement('select');
+  type.className = 'chapter-kind';
+  type.dataset.field = 'kind';
+  type.setAttribute('aria-label', `Тип раздела — ${ch.sourceName}`);
+  for (const [value, label] of Object.entries(KIND_LABEL)) type.add(new Option(label, value));
+  type.value = ch.kind;
+  type.disabled = !ch.blocks;
+  type.addEventListener('change', () => {
+    const value = type.value;
+    rememberChapterEdit(ch, value === 'chapter' ? { kind: value } : { kind: value, number: null });
+    number.disabled = value !== 'chapter';
+    number.value = ch.number ?? '';
+    pushEdits();
+  });
+  kind.appendChild(type);
+
+  const words = document.createElement('td');
+  words.className = 'col-num2';
+  words.textContent = ch.words ? fmt(ch.words) : '—';
+
+  const imgs = document.createElement('td');
+  imgs.className = 'col-num2';
+  imgs.textContent = ch.images || '—';
+
+  const blocks = document.createElement('td');
+  blocks.className = 'col-num2';
+  blocks.textContent = ch.systemBlocks || '—';
+
+  const issues = document.createElement('td');
+  issues.className = 'col-issues';
+  for (const text of ch.issues) {
+    const span = document.createElement('span');
+    span.className = issueClass(text);
+    span.textContent = text;
+    issues.appendChild(span);
+  }
+
+  tr.append(on, num, title, kind, words, imgs, blocks, issues);
+  return tr;
+}
+
+const chapterRows = createChapterRows($('chapterBody'), createChapterRow, ch => JSON.stringify([
+  ch.include, ch.blocks, ch.number, ch.title, ch.kind, ch.sourceName, ch.sourcePath,
+  ch.words, ch.images, ch.systemBlocks, ch.issues,
+]));
+
 function renderChapters() {
   const tbody = $('chapterBody');
   const focus = document.activeElement;
-  const focusRow = focus.closest?.('#chapterBody tr[data-id]');
-  const focusField = focusRow && focus.dataset.field;
+  const focusId = focus?.closest('#chapterBody tr[data-id]')?.dataset.id;
+  const focusField = focusId && focus.dataset.field;
   const selection = focusField && focus.type === 'text' ? [focus.selectionStart, focus.selectionEnd] : null;
-  const draftValue = focus.value;
-  tbody.innerHTML = '';
-  const rows = visibleChapters();
-  const fragment = document.createDocumentFragment();
-  let nextFocus;
-
+  const draftValue = focus?.value;
+  const visible = visibleChapters();
+  chapterRows.render(state.chapters, visible);
   $('tabChaptersCount').textContent = String(state.chapters.filter((c) => c.include).length);
 
-  if (!rows.length) {
+  if (!visible.length) {
     const tr = document.createElement('tr');
     tr.className = 'empty';
     tr.innerHTML = '<td colspan="8">Ничего не найдено</td>';
@@ -264,111 +376,9 @@ function renderChapters() {
     return;
   }
 
-  for (const ch of rows) {
-    const tr = document.createElement('tr');
-    tr.dataset.id = ch.id;
-    if (!ch.include) tr.classList.add('off');
-
-    const on = document.createElement('td');
-    on.className = 'col-on';
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.dataset.field = 'include';
-    cb.checked = ch.include;
-    cb.disabled = !ch.blocks;
-    cb.title = ch.blocks ? 'Включить раздел в книгу' : 'В разделе нет содержимого для экспорта';
-    cb.setAttribute('aria-label', `Включить раздел — ${ch.sourceName}`);
-    cb.addEventListener('change', () => {
-      rememberChapterEdit(ch, { include: cb.checked });
-      tr.classList.toggle('off', !cb.checked);
-      pushEdits();
-    });
-    on.appendChild(cb);
-
-    const num = document.createElement('td');
-    num.className = 'col-num';
-    const handle = document.createElement('span');
-    handle.className = 'drag-handle';
-    handle.draggable = true;
-    handle.title = 'Перетащить раздел';
-    handle.textContent = '⠿';
-    const number = chapterTextField('number', ch, 'Номер главы', ch.number === null ? '' : String(ch.number), field => {
-      const value = field.value.trim();
-      if (value && !/^\d{1,4}$/.test(value)) {
-        field.value = ch.number ?? '';
-        setStatus('Введите целый номер от 0 до 9999');
-        return;
-      }
-      rememberChapterEdit(ch, { number: value ? Number(value) : null });
-      pushEdits();
-    });
-    number.inputMode = 'numeric';
-    number.maxLength = 4;
-    number.placeholder = '—';
-    number.disabled = ch.kind !== 'chapter' || !ch.blocks;
-    const numberGroup = document.createElement('div');
-    numberGroup.className = 'chapter-number-group';
-    numberGroup.append(handle, number);
-    num.appendChild(numberGroup);
-
-    const title = document.createElement('td');
-    title.className = 'col-title';
-    const input = chapterTextField('title', ch, 'Название главы', ch.title, field => {
-      rememberChapterEdit(ch, { title: field.value.trim() });
-      pushEdits();
-    });
-    input.placeholder = 'Без названия';
-    input.disabled = !ch.blocks;
-    const source = document.createElement('small');
-    source.className = 'chapter-source';
-    source.textContent = ch.sourceName;
-    source.title = ch.sourcePath || ch.sourceName;
-    title.append(input, source);
-
-    const kind = document.createElement('td');
-    kind.className = 'col-kind';
-    const type = document.createElement('select');
-    type.className = 'chapter-kind';
-    type.dataset.field = 'kind';
-    type.setAttribute('aria-label', `Тип раздела — ${ch.sourceName}`);
-    for (const [value, label] of Object.entries(KIND_LABEL)) type.add(new Option(label, value));
-    type.value = ch.kind;
-    type.disabled = !ch.blocks;
-    type.addEventListener('change', () => {
-      const value = type.value;
-      rememberChapterEdit(ch, value === 'chapter' ? { kind: value } : { kind: value, number: null });
-      number.disabled = value !== 'chapter';
-      number.value = ch.number ?? '';
-      pushEdits();
-    });
-    kind.appendChild(type);
-
-    const words = document.createElement('td');
-    words.className = 'col-num2';
-    words.textContent = ch.words ? fmt(ch.words) : '—';
-
-    const imgs = document.createElement('td');
-    imgs.className = 'col-num2';
-    imgs.textContent = ch.images || '—';
-
-    const blocks = document.createElement('td');
-    blocks.className = 'col-num2';
-    blocks.textContent = ch.systemBlocks || '—';
-
-    const issues = document.createElement('td');
-    issues.className = 'col-issues';
-    for (const text of ch.issues) {
-      const span = document.createElement('span');
-      span.className = issueClass(text);
-      span.textContent = text;
-      issues.appendChild(span);
-    }
-
-    tr.append(on, num, title, kind, words, imgs, blocks, issues);
-    if (focusField && focusRow.dataset.id === ch.id) nextFocus = tr.querySelector(`[data-field="${focusField}"]`);
-    fragment.appendChild(tr);
-  }
-  tbody.appendChild(fragment);
+  if (!focusField || document.activeElement === focus) return;
+  const nextRow = Array.from(tbody.children).find(row => row.dataset.id === focusId);
+  const nextFocus = nextRow?.querySelector(`[data-field="${focusField}"]`);
   if (nextFocus && !nextFocus.disabled) {
     nextFocus.focus({ preventScroll: true });
     if (selection) {
@@ -435,21 +445,22 @@ async function syncEdits() {
   editTimer = null;
   const revision = editRevision;
   const result = await api.applyEdits({
-    chapters: state.chapters.map((c) => ({
-      id: c.id,
-      include: c.include,
-      title: c.title,
-      number: c.number,
-      kind: c.kind,
-    })),
+    chapters: Array.from(pendingChapterEdits, ([id, patch]) => ({ id, ...patch })),
     order: state.order,
     sortByNumber: state.sortByNumber,
     cover: state.cover,
+    compact: true,
   });
   if (revision !== editRevision) return;
-  const labels = new Map(state.chapters.map(ch => [ch.id, ch.label]));
-  state.chapters = result.summary.chapters;
-  if (state.chapters.some(ch => ch.label !== labels.get(ch.id))) renderCoverOptions();
+  pendingChapterEdits.clear();
+  const previous = new Map(state.chapters.map(ch => [ch.id, ch]));
+  let labelsChanged = false;
+  state.chapters = result.summary.chapters.map(chapter => {
+    const existing = previous.get(chapter.id);
+    if (chapter.label !== existing?.label) labelsChanged = true;
+    return existing ? Object.assign(existing, chapter) : chapter;
+  });
+  if (labelsChanged) renderCoverOptions();
   state.stats = result.stats;
   state.audit = result.audit;
   state.sourceWarnings = result.sourceWarnings || [];
@@ -596,7 +607,12 @@ async function refreshCoverPreview() {
     return false;
   }
   box.innerHTML = '<span>Загрузка…</span>';
-  const dataUrl = await api.assetDataUrl(state.cover);
+  let dataUrl;
+  try {
+    dataUrl = await api.assetThumbnail(state.cover);
+  } catch (error) {
+    if (revision === coverPreviewRevision) log(`ОШИБКА предпросмотра обложки: ${error.message}`);
+  }
   if (revision !== coverPreviewRevision) return false;
   state.coverDataUrl = dataUrl;
   if (!dataUrl) {
@@ -712,6 +728,7 @@ async function runBuild() {
   if(!hasFormat()) {setStatus('Выберите хотя бы один формат для сохранения');return;}
   if (!state.outDir) {
     if (!await chooseOutputDirectory()) return;
+    if (state.busy) return;
   }
   if (!$('metaTitle').value.trim()) {
     setStatus('Впишите название книги');
@@ -726,7 +743,8 @@ async function runBuild() {
     if (!state.chapters.some(c => c.include)) { setStatus('Нет включённых глав для сборки'); return; }
     if (!await reviewSourceWarnings()) { setStatus('Сборка отменена. Проверьте состав глав.'); return; }
     setStatus('Сборка…');
-    forgetDocument();
+    previewBlocked = true;
+    await invalidatePreview();
     const started = Date.now();
     log('Сборка начата');
     const report = await api.build({
@@ -767,12 +785,14 @@ async function runBuild() {
 
     if (report.pdf) {
       $('previewRefresh').disabled = false;
-      await showPreview();
+    } else {
+      $('previewRefresh').disabled = true;
     }
   } catch (e) {
     log(`ОШИБКА сборки: ${e.message}`);
     setStatus(`Ошибка сборки: ${e.message}`);
   } finally {
+    previewBlocked = false;
     setBusy(false);
   }
 }
@@ -878,24 +898,45 @@ function renderReport(report) {
 
 /* ───────────────────────────── предпросмотр ───────────────────────────── */
 
-async function showPreview() {
+let previewRevision = 0;
+let previewKey = null;
+let previewBlocked = false;
+
+function invalidatePreview() {
+  previewRevision++;
+  previewKey = null;
+  return forgetDocument();
+}
+
+async function showPreview(force = false) {
   const grid = $('previewGrid');
+  if (previewBlocked) {
+    grid.innerHTML = '<p class="muted">PDF собирается…</p>';
+    return;
+  }
   const report = state.report && bookVersions(state.report)[Number($('previewVersion').value) || 0];
   if (!report || !report.pdf || !report.qa.pdf) {
+    void invalidatePreview();
     grid.innerHTML = '<p class="muted">Предпросмотр появится после сборки PDF.</p>';
     return;
   }
 
-  grid.innerHTML = '<p class="muted">Отрисовка страниц…</p>';
   const sample = report.qa.pdf.visualSample || [];
   if (!sample.length) {
+    void invalidatePreview();
     grid.innerHTML = '<p class="muted">Нечего показать.</p>';
     return;
   }
 
+  const width = Number($('previewWidth').value);
+  const key = JSON.stringify([report.pdf.fileUrl, width]);
+  if (!force && key === previewKey) return;
+  previewKey = key;
+  const revision = ++previewRevision;
+  grid.innerHTML = '<p class="muted">Отрисовка страниц…</p>';
   try {
-    const width = Number($('previewWidth').value);
-    const pages = await renderSample(report.pdf.path, sample, width);
+    const pages = await renderSample(report.pdf.fileUrl, sample, width);
+    if (revision !== previewRevision || !pages) return;
     grid.innerHTML = '';
     for (const p of pages) {
       const fig = document.createElement('figure');
@@ -911,7 +952,12 @@ async function showPreview() {
     }
     log(`Предпросмотр: ${pages.length} ${plural(pages.length, 'страница', 'страницы', 'страниц')} при ширине ${width} px`);
   } catch (e) {
-    grid.innerHTML = `<p class="muted">Не удалось отрисовать: ${e.message}</p>`;
+    if (revision !== previewRevision) return;
+    previewKey = null;
+    const message = document.createElement('p');
+    message.className = 'muted';
+    message.textContent = `Не удалось отрисовать: ${e.message}`;
+    grid.replaceChildren(message);
     log(`ОШИБКА предпросмотра: ${e.message}`);
   }
 }
@@ -921,6 +967,7 @@ async function showPreview() {
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
   document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.dataset.panel === name));
+  if (name === 'preview') void showPreview();
 }
 
 /* ───────────────────────────── инициализация ───────────────────────────── */
@@ -1011,6 +1058,7 @@ async function init() {
     clearTimeout(editTimer);
     editRevision += 1;
     chapterEdits.clear();
+    pendingChapterEdits.clear();
     state.order = [];
     state.sortByNumber = false;
     state.sources = [];
@@ -1027,6 +1075,8 @@ async function init() {
     renderSourceWarnings();
     renderCoverOptions();
     refreshCoverPreview();
+    scheduleLayoutPreview();
+    api.clearBook().catch(error => log(`ОШИБКА очистки книги: ${error.message}`));
     setStatus('Добавьте главы, чтобы начать');
     $('buildBtn').disabled = true;
   });
@@ -1035,11 +1085,23 @@ async function init() {
 
   $('pickCoverBtn').addEventListener('click', async () => {
     const file = await api.pickCover();
-    if (!file) return;
-    await addSources([file]);
-    // Файл обложки попадает в ресурсы при разборе — выбираем его в списке.
-    const found = state.coverCandidates.find(c => c.paths?.includes(file));
-    if (found) await chooseCover(found);
+    if (!file || state.busy) return;
+    setBusy(true, 'Загрузка обложки…');
+    try {
+      const candidate = await api.addCover(file);
+      state.coverCandidates = state.coverCandidates.filter(c => c.assetId !== candidate.assetId);
+      state.coverCandidates.push(candidate);
+      if (!state.sources.includes(file)) state.sources.push(file);
+      renderSourceList();
+      renderCoverOptions();
+      await chooseCover(candidate);
+      setStatus('Обложка выбрана');
+    } catch (error) {
+      log(`ОШИБКА загрузки обложки: ${error.message}`);
+      setStatus(`Не удалось загрузить обложку: ${error.message}`);
+    } finally {
+      setBusy(false);
+    }
   });
 
   $('coverSelect').addEventListener('change', async (e) => {
@@ -1060,12 +1122,13 @@ async function init() {
 
   $('illustrationVersion').addEventListener('change',updateOutNameHint);
   $('fb2Compatibility').addEventListener('change',updateOutNameHint);
-  $('previewVersion').addEventListener('change',showPreview);
+  $('previewVersion').addEventListener('change', () => showPreview());
 
   $('includeAllBtn').addEventListener('click', () => {
     for (const ch of state.chapters) if (ch.blocks) rememberChapterEdit(ch, { include: true });
     renderChapters();
     pushEdits();
+    scheduleLayoutPreview();
   });
 
   $('excludeAllBtn').addEventListener('click', () => {
@@ -1074,6 +1137,7 @@ async function init() {
     renderChapters();
     $('buildBtn').disabled = true;
     pushEdits();
+    scheduleLayoutPreview();
   });
 
   $('resortBtn').addEventListener('click', () => {
@@ -1082,8 +1146,8 @@ async function init() {
     pushEdits();
   });
 
-  $('previewRefresh').addEventListener('click', showPreview);
-  $('previewWidth').addEventListener('change', showPreview);
+  $('previewRefresh').addEventListener('click', () => showPreview(true));
+  $('previewWidth').addEventListener('change', () => showPreview());
 
   document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => switchTab(t.dataset.tab)));
 
@@ -1175,6 +1239,7 @@ function initManualLayout(defaults) {
       const selected=state.chapters.filter(c=>c.include);
       const stats={chapters:selected.filter(c=>c.kind==='chapter').length,words:selected.reduce((sum,c)=>sum+(c.words||0),0)};
       const data=await api.previewFrontMatter({meta,style,stats});
+      if(version!==revision) return;
       const result=await renderFrontMatter(data,style);
       if(version!==revision) return;
       $('layoutPreview').replaceChildren();
@@ -1194,6 +1259,7 @@ function initManualLayout(defaults) {
     $(id).addEventListener('input',schedule); $(id).addEventListener('change',schedule);
   }
   $('chapterBody').addEventListener('change',schedule);
+  scheduleLayoutPreview=schedule;
   schedule();
 }
 

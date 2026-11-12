@@ -1,9 +1,9 @@
 'use strict';
 
 const path = require('path');
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, utilityProcess } = require('electron');
 
-const pipeline = require('../core/pipeline');
+const { registerBookHandlers } = require('./book-service');
 const { DEFAULT_STYLE, LIMITS } = require('../core/style');
 const { GENRES } = require('../core/genres');
 const { svgTitleMark, svgSceneBreak, svgFolio } = require('../core/signature');
@@ -144,17 +144,8 @@ ipcMain.handle('dialog:pickCover', async () => {
   return res.canceled ? null : res.filePaths[0];
 });
 
-ipcMain.handle('book:analyze', async (_e, paths) => {
-  return bookOperation(() => pipeline.analyze(paths, sendProgress));
-});
-
-ipcMain.handle('book:applyEdits', async (_e, edits) => pipeline.applyEdits(edits));
-
-ipcMain.handle('book:previewFrontMatter', async (_e, opts) => require('../core/pdf/front-matter-preview').previewFrontMatter(opts));
-
-ipcMain.handle('book:build', async (_e, opts) => bookOperation(() => pipeline.build(opts, sendProgress)));
-
-ipcMain.handle('asset:dataUrl', async (_e, assetId) => pipeline.assetDataUrl(assetId));
+const bookService = registerBookHandlers({ ipcMain, utilityProcess, onProgress: sendProgress, bookOperation });
+app.on('will-quit', () => bookService.close());
 
 ipcMain.handle('style:defaults', async () => ({
   style: DEFAULT_STYLE,
@@ -216,11 +207,12 @@ app.whenReady().then(() => {
 
   if (checkDir) {
     require('./installation-check').runInstallationCheck(mainWindow, checkDir)
-      .then(() => app.exit(0))
+      .then(() => { bookService.close(); app.exit(0); })
       .catch(async error => {
         const fs = require('fs/promises');
         await fs.mkdir(checkDir, {recursive: true});
         await fs.writeFile(path.join(checkDir, 'failure.txt'), String(error.stack || error));
+        bookService.close();
         app.exit(1);
       });
     return;

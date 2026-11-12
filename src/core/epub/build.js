@@ -1,7 +1,10 @@
 'use strict';
 
 const fs = require('fs/promises');
+const { createWriteStream } = require('fs');
 const crypto = require('crypto');
+const path = require('path');
+const { pipeline } = require('stream/promises');
 const JSZip = require('jszip');
 
 const T = require('./templates');
@@ -25,6 +28,7 @@ const EXT_MIME = {
   svg: 'image/svg+xml',
   bmp: 'image/bmp',
 };
+const COMPRESSED_MEDIA = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 
 function pad(n, len = 3) {
   return String(n).padStart(len, '0');
@@ -52,7 +56,7 @@ async function buildEpub({ book, style, fonts, outPath, onProgress = () => {} })
 
   function addPng(id, data) {
     const href = imageHref(id);
-    zip.file(`EPUB/${href}`, data);
+    zip.file(`EPUB/${href}`, data, { compression: 'STORE' });
     items.push({ id, href, type: 'image/png' });
   }
 
@@ -83,12 +87,13 @@ async function buildEpub({ book, style, fonts, outPath, onProgress = () => {} })
     const ext = asset.ext === 'jpeg' ? 'jpg' : asset.ext;
     const name = isCover ? `cover.${ext}` : `img${pad(imgIndex)}.${ext}`;
     const href = `images/${name}`;
+    const type = EXT_MIME[ext] || asset.mime || 'application/octet-stream';
     assetHref.set(assetId, href);
-    zip.file(`EPUB/${href}`, asset.data);
+    zip.file(`EPUB/${href}`, asset.data, COMPRESSED_MEDIA.has(type) ? { compression: 'STORE' } : undefined);
     items.push({
       id: isCover ? 'cover-image' : `img${pad(imgIndex)}`,
       href,
-      type: EXT_MIME[ext] || asset.mime || 'application/octet-stream',
+      type,
       properties: isCover ? 'cover-image' : undefined,
     });
   }
@@ -155,17 +160,25 @@ async function buildEpub({ book, style, fonts, outPath, onProgress = () => {} })
   zip.file('EPUB/package.opf', T.packageOpf(bookMeta, items, spine, modified));
 
   onProgress({ phase: 'epub', label: 'Упаковка EPUB' });
-  const buffer = await zip.generateAsync({
+  const stream = zip.generateNodeStream({
     type: 'nodebuffer',
     compression: 'DEFLATE',
     compressionOptions: { level: 8 },
     mimeType: 'application/epub+zip',
   });
-  await fs.writeFile(outPath, buffer);
+  const temporary = path.join(path.dirname(outPath), `.pdef-${crypto.randomUUID()}.tmp`);
+  let size;
+  try {
+    await pipeline(stream, createWriteStream(temporary, { flags: 'wx' }));
+    size = (await fs.stat(temporary)).size;
+    await fs.rename(temporary, outPath);
+  } finally {
+    await fs.rm(temporary, { force: true });
+  }
 
   return {
     outPath,
-    size: buffer.length,
+    size,
     documents: spine.length,
     chapters: active.length,
     images: usedAssets.size,

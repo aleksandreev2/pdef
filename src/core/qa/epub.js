@@ -4,6 +4,8 @@ const fs = require('fs/promises');
 const { execFile } = require('child_process');
 const JSZip = require('jszip');
 const { XMLParser, XMLValidator } = require('fast-xml-parser');
+const { parseDocument } = require('htmlparser2');
+const { chapterKicker, runsText } = require('../model');
 
 /**
  * Структурная проверка готового EPUB одним проходом (п.8.3 спецификации).
@@ -12,7 +14,7 @@ const { XMLParser, XMLValidator } = require('fast-xml-parser');
  * выполнена собственным валидатором.
  */
 
-const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@', preserveOrder: true });
+const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@', preserveOrder: true, parseTagValue: false });
 
 function check(name, ok, detail) {
   return { name, ok: !!ok, detail: detail || '' };
@@ -36,6 +38,56 @@ function findDeepAll(nodes, name, out = []) {
     findDeepAll(kids(n), name, out);
   }
   return out;
+}
+
+function textOf(node) {
+  if (node.type === 'text') return node.data;
+  if (node.name === 'img' && node.attribs.class === 'pdef-emoji') return node.attribs.alt || '';
+  return (node.children || []).map(textOf).join('');
+}
+
+function norm(value) {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function readXhtml(text) {
+  const html = parseDocument(text, { xmlMode: true }).children.find(node => node.name === 'html');
+  return html?.children.find(node => node.name === 'body')?.children || [];
+}
+
+function expectedChapter(chapter) {
+  const text = [chapter.title || chapterKicker(chapter)];
+  const images = [];
+  for (const block of chapter.blocks) {
+    if (block.type === 'para' || block.type === 'heading') text.push(runsText(block.runs));
+    else if (block.type === 'list') text.push(...block.items.map(runsText));
+    else if (block.type === 'system') text.push(...block.lines.map(runsText));
+    else if (block.type === 'image') images.push(block.alt || 'Иллюстрация');
+  }
+  return { text: text.map(norm).filter(Boolean), images: images.map(norm) };
+}
+
+function actualChapter(source) {
+  const text = [];
+  const images = [];
+  function visit(node) {
+    const cls = node.attribs?.class || '';
+    if (node.name === 'h1' || node.name === 'h2' || (node.name === 'p' && !['opener-mark', 'kicker', 'scene'].includes(cls))) {
+      text.push(textOf(node));
+    } else if (node.name === 'ul' || node.name === 'ol' || cls === 'sysblock') {
+      for (const child of node.children) if (child.name === 'li' || child.name === 'p') text.push(textOf(child));
+    } else if (node.name === 'figure') {
+      for (const child of node.children) if (child.name === 'img') images.push(child.attribs.alt || '');
+    } else if (['section', 'header', 'div'].includes(node.name)) {
+      node.children.forEach(visit);
+    }
+  }
+  readXhtml(source).forEach(visit);
+  return { text: text.map(norm).filter(Boolean), images: images.map(norm) };
+}
+
+function sameContents(actual, expected) {
+  return actual.length === expected.length && actual.every((value, index) => value === expected[index]);
 }
 
 /**
@@ -98,12 +150,14 @@ async function checkEpub(epubPath, { book, expected }) {
   /* ── валидность XML всех документов ── */
   const xmlFiles = Object.keys(zip.files).filter((n) => /\.(xhtml|opf|xml|ncx)$/i.test(n) && !zip.files[n].dir);
   const xmlErrors = [];
+  const validXml = new Set();
   const docSources = new Map();
   for (const name of xmlFiles) {
     const text = await zip.file(name).async('string');
     docSources.set(name, text);
     const res = XMLValidator.validate(text, { allowBooleanAttributes: true });
-    if (res !== true) xmlErrors.push(`${name}: ${res.err.msg} (строка ${res.err.line})`);
+    if (res === true) validXml.add(name);
+    else xmlErrors.push(`${name}: ${res.err.msg} (строка ${res.err.line})`);
   }
   checks.push(
     check(
@@ -148,7 +202,7 @@ async function checkEpub(epubPath, { book, expected }) {
       .replace(/<[^>]+>/g, '')
       .replace(/\s+/g, '');
     const hasImg = /<img\b/i.test(text) || /<svg\b/i.test(text);
-    if (bodyText.length < 12 && !hasImg) emptyDocs.push(it.href);
+    if (!bodyText.length && !hasImg) emptyDocs.push(it.href);
   }
   checks.push(
     check(
@@ -247,7 +301,12 @@ async function checkEpub(epubPath, { book, expected }) {
   );
 
   /* ── внешняя ссылка на команду ── */
-  const teamLinkFiles = [...docSources.entries()].filter(([, t]) => t.includes(book.teamUrl));
+  const teamLinkFiles = ['titlepage', 'about'].filter(id => {
+    const item = byId.get(id);
+    if (!item) return false;
+    const body = parseDocument(docSources.get(resolve(item.href)) || '', { xmlMode: true });
+    return containsLink(body, book.teamUrl);
+  });
   checks.push(
     check(
       `Внешняя ссылка на ${book.team} корректна`,
@@ -261,8 +320,7 @@ async function checkEpub(epubPath, { book, expected }) {
     ? [chapterSpine[0], chapterSpine[Math.floor(chapterSpine.length / 2)], chapterSpine[chapterSpine.length - 1]]
     : [];
   const probeOk = probe.every((href) => {
-    const text = docSources.get(resolve(href)) || '';
-    return text.length > 200 && XMLValidator.validate(text, { allowBooleanAttributes: true }) === true;
+    return validXml.has(resolve(href));
   });
   checks.push(
     check(
@@ -272,14 +330,30 @@ async function checkEpub(epubPath, { book, expected }) {
     ),
   );
 
+  const active = book.chapters.filter(chapter => chapter.include && chapter.blocks.length);
+  const badText = [];
+  const badImages = [];
+  chapterSpine.forEach((href, index) => {
+    const chapter = active[index];
+    if (!chapter) return;
+    const actual = actualChapter(docSources.get(resolve(href)) || '');
+    const source = expectedChapter(chapter);
+    if (!sameContents(actual.text, source.text)) badText.push(href);
+    if (!sameContents(actual.images, source.images)) badImages.push(href);
+  });
+  checks.push(check('Текст всех глав сохранён в исходном порядке', active.length === chapterSpine.length && !badText.length,
+    badText.length ? badText.slice(0, 3).join(', ') : `проверено глав: ${chapterSpine.length}`));
+  checks.push(check('Иллюстрации глав и их подписи сохранены', active.length === chapterSpine.length && !badImages.length,
+    badImages.slice(0, 3).join(', ')));
+
   /* ── язык и переводчик ── */
-  const opfText = docSources.get(opfPath) || '';
   const language = book.language || 'ru';
-  checks.push(check(`Язык книги — ${language}`, new RegExp(`<dc:language>\\s*${escapeRe(language)}\\s*</dc:language>`).test(opfText)));
+  const opfText = (node) => kids(node).map(child => String(child['#text'] ?? '')).join('');
+  checks.push(check(`Язык книги — ${language}`, findDeepAll(opfTree, 'dc:language').some(node => opfText(node).trim() === language)));
   checks.push(
     check(
       `Переводчик указан как ${book.team}`,
-      new RegExp(`<dc:contributor[^>]*>${escapeRe(book.team)}</dc:contributor>`).test(opfText),
+      findDeepAll(opfTree, 'dc:contributor').some(node => attrs(node)['@id'] === 'translator' && opfText(node) === book.team),
     ),
   );
   checks.push(check('JavaScript в EPUB не используется', ![...docSources.values()].some((t) => /<script\b/i.test(t))));
@@ -289,7 +363,7 @@ async function checkEpub(epubPath, { book, expected }) {
   if (ec.available) {
     checks.push(check('epubcheck', ec.ok, ec.detail));
   } else {
-    notes.push('epubcheck не установлен — использована собственная структурная проверка');
+    notes.push(ec.detail || 'epubcheck не установлен — использована собственная структурная проверка');
   }
 
   return { ok: checks.every((c) => c.ok), checks, notes };
@@ -306,26 +380,35 @@ function normalizePath(p) {
   return out.join('/');
 }
 
-function escapeRe(s) {
-  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function containsLink(node, href) {
+  return (node.name === 'a' && node.attribs.href === href) || node.children?.some(child => containsLink(child, href));
 }
 
 function tryEpubcheck(epubPath) {
   return new Promise((resolve) => {
-    execFile('epubcheck', [epubPath], { timeout: 180000, windowsHide: true }, (err, stdout, stderr) => {
+    const complete = (err, stdout, stderr) => {
       const out = `${stdout || ''}${stderr || ''}`;
-      if (err && (err.code === 'ENOENT' || /не найден|not recognized|not found/i.test(out))) {
+      if (err?.code === 'ENOENT') {
         resolve({ available: false });
+        return;
+      }
+      if (err?.syscall?.startsWith('spawn') && typeof err.code === 'string') {
+        resolve({ available: false, detail: `Не удалось запустить epubcheck (${err.code}) — использована собственная проверка` });
         return;
       }
       const errors = (out.match(/^ERROR/gim) || []).length;
       const fatals = (out.match(/^FATAL/gim) || []).length;
       resolve({
         available: true,
-        ok: errors === 0 && fatals === 0,
-        detail: errors || fatals ? `ошибок: ${errors}, критических: ${fatals}` : 'без ошибок',
+        ok: !err && errors === 0 && fatals === 0,
+        detail: errors || fatals ? `ошибок: ${errors}, критических: ${fatals}` : err ? err.message : 'без ошибок',
       });
-    });
+    };
+    try {
+      execFile('epubcheck', [epubPath], { timeout: 180000, windowsHide: true }, complete);
+    } catch (error) {
+      complete(error);
+    }
   });
 }
 

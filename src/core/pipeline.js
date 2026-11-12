@@ -34,6 +34,7 @@ const session = {
   warnings: [],
   fontWarnings: [],
 };
+const coverThumbnails = new Map();
 
 /* ───────────────────────────────── анализ ───────────────────────────────── */
 
@@ -95,6 +96,7 @@ async function analyze(paths, onProgress = () => {}) {
   session.book = book;
   session.loose = loose;
   session.warnings = warnings;
+  coverThumbnails.clear();
 
   return {
     summary: summarize(book),
@@ -110,7 +112,7 @@ async function analyze(paths, onProgress = () => {}) {
 }
 
 /** Сериализуемая сводка по главам — без самих блоков. */
-function summarize(book) {
+function summarize(book, includeAssets = true) {
   return {
     chapters: book.chapters.map((ch) => ({
       id: ch.id,
@@ -129,7 +131,7 @@ function summarize(book) {
       systemBlocks: ch.systemBlocks,
       blocks: ch.blocks.length,
     })),
-    assets: [...book.assets.values()].map((a) => ({ id: a.id, ext: a.ext, bytes: a.data.length })),
+    ...(includeAssets ? { assets: [...book.assets.values()].map((a) => ({ id: a.id, ext: a.ext, bytes: a.data.length })) } : {}),
   };
 }
 
@@ -138,7 +140,8 @@ function applyEdits(edits = {}) {
   if (!session.book) throw new Error('Сначала выполните разбор исходников');
   const book = session.book;
 
-  if (Array.isArray(edits.chapters)) {
+  const hasChapterEdits = Array.isArray(edits.chapters) && edits.chapters.length > 0;
+  if (hasChapterEdits) {
     const byId = new Map(book.chapters.map((c) => [c.id, c]));
     for (const patch of edits.chapters) {
       const ch = byId.get(patch.id);
@@ -154,12 +157,12 @@ function applyEdits(edits = {}) {
         ch.number = patch.number;
       }
     }
-    if (Array.isArray(edits.order) && edits.order.length) {
-      const pos = new Map(edits.order.map((id, i) => [id, i]));
-      book.chapters.sort((a, b) => (pos.get(a.id) ?? 1e9) - (pos.get(b.id) ?? 1e9));
-    } else {
-      sortChapters(book.chapters, { preserveEbookOrder: edits.sortByNumber !== true });
-    }
+  }
+  if (Array.isArray(edits.order) && edits.order.length) {
+    const pos = new Map(edits.order.map((id, i) => [id, i]));
+    book.chapters.sort((a, b) => (pos.get(a.id) ?? 1e9) - (pos.get(b.id) ?? 1e9));
+  } else if (hasChapterEdits || edits.sortByNumber === true) {
+    sortChapters(book.chapters, { preserveEbookOrder: edits.sortByNumber !== true });
   }
 
   if (edits.cover !== undefined) {
@@ -169,7 +172,7 @@ function applyEdits(edits = {}) {
   // Статистика пересчитывается, потому что состав глав изменился.
   book.stats = computeStats(book.chapters);
   book.audit = refreshAuditSelection(book.audit, book.chapters);
-  return { summary: summarize(book), stats: book.stats, audit: book.audit, sourceWarnings: auditWarnings(book.audit) };
+  return { summary: summarize(book, edits.compact !== true), stats: book.stats, audit: book.audit, sourceWarnings: auditWarnings(book.audit) };
 }
 
 /* ───────────────────────────── имена файлов ───────────────────────────── */
@@ -323,6 +326,7 @@ async function buildVersion(opts, onProgress, book, outDir, version) {
       tocFirstPage: pdfResult ? pdfResult.tocFirstPage : 3,
       chapterPages: pdfResult ? pdfResult.chapterPages : {},
       firstContentPage: pdfResult ? pdfResult.firstContentPage : 1,
+      imagePages: pdfResult?.imagePages,
     };
 
     const [pdfQa, epubQa] = await Promise.all([
@@ -331,7 +335,7 @@ async function buildVersion(opts, onProgress, book, outDir, version) {
     ]);
     const extraQa={};
     await Promise.all(Object.entries(extraResults).filter(([,r])=>r).map(async([format])=>{
-      extraQa[format]=await checkExport(exportPath(format),{book,format});
+      extraQa[format]=await checkExport(exportPath(format),{book,format,fb2Compatibility});
     }));
 
     const report = {
@@ -389,8 +393,52 @@ function assetDataUrl(assetId) {
   return `data:${asset.mime};base64,${asset.data.toString('base64')}`;
 }
 
+async function addCoverFile(filePath) {
+  if (typeof filePath !== 'string' || !/\.(?:jpe?g|png|gif|webp|bmp)$/i.test(filePath) || !(await fs.stat(filePath)).isFile()) {
+    throw new Error('Выберите файл изображения для обложки');
+  }
+  const imported = await importSources([filePath]);
+  const picture = imported.loose[0];
+  if (!picture) throw new Error(imported.warnings[0] || 'Не удалось прочитать обложку');
+  const incoming = imported.assets.get(picture.assetId);
+  const book = session.book ||= { ...makeBook(), audit: auditChapters([]), stats: computeStats([]) };
+  let asset = [...book.assets.values()].find(item => item.hash === incoming.hash);
+  if (!asset) {
+    let n = book.assets.size + 1;
+    let id;
+    do { id = `img${String(n++).padStart(3, '0')}`; } while (book.assets.has(id));
+    asset = { ...incoming, id };
+    book.assets.set(id, asset);
+  }
+  if (!session.loose.some(item => item.path === picture.path)) session.loose.push({ ...picture, assetId: asset.id });
+  return { assetId: asset.id, hash: asset.hash, name: picture.name, sourcePath: picture.path, paths: [picture.path] };
+}
+
+async function assetThumbnail(assetId) {
+  const asset = session.book?.assets.get(assetId);
+  if (!asset) return null;
+  if (!coverThumbnails.has(asset)) {
+    if (coverThumbnails.size >= 16) coverThumbnails.delete(coverThumbnails.keys().next().value);
+    coverThumbnails.set(asset, (async () => {
+      const { createCanvas, loadImage } = require('@napi-rs/canvas');
+      const image = await loadImage(asset.data);
+      if (!image.width || !image.height) return null;
+      const scale = Math.min(1, 256 / Math.max(image.width, image.height));
+      const canvas = createCanvas(Math.max(1, Math.round(image.width * scale)), Math.max(1, Math.round(image.height * scale)));
+      canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+      return `data:image/png;base64,${(await canvas.encode('png')).toString('base64')}`;
+    })().catch(() => null));
+  }
+  return coverThumbnails.get(asset);
+}
+
 function getSession() {
   return session;
 }
 
-module.exports = { analyze, applyEdits, build, assetDataUrl, getSession, outputBaseName, sanitizeName };
+function clearBook() {
+  Object.assign(session, { book: null, loose: [], warnings: [], fontWarnings: [] });
+  coverThumbnails.clear();
+}
+
+module.exports = { analyze, applyEdits, build, assetDataUrl, addCoverFile, assetThumbnail, getSession, clearBook, outputBaseName, sanitizeName };

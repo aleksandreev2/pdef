@@ -13,7 +13,7 @@ function readFb2Glyph(href) {
   return supplementary.test(value) && [...graphemes.segment(value)].length === 1 ? value : null;
 }
 
-function createGlyphImages(fonts = {}) {
+function createGlyphImages(fonts = {}, candidates = /[\u{10000}-\u{10ffff}]/gu) {
   const resources = new Map();
   const missing = new Set();
   let doc, measurer;
@@ -61,13 +61,18 @@ function createGlyphImages(fonts = {}) {
   }
 
   function markup(value, escape, imageMarkup, accepts = () => true) {
-    if (!supplementary.test(value)) return escape(value);
+    if (value.search(candidates) < 0) return escape(value);
     let text = '';
     let start = 0;
-    for (const { segment, index } of graphemes.segment(value)) {
-      if (!supplementary.test(segment) || !accepts(segment)) continue;
+    let lastClusterEnd = 0;
+    const segments = graphemes.segment(value);
+    for (const match of value.matchAll(candidates)) {
+      if (match.index < lastClusterEnd) continue;
+      const { segment, index } = segments.containing(match.index);
+      lastClusterEnd = index + segment.length;
+      if (!accepts(segment)) continue;
       text += escape(value.slice(start, index));
-      start = index + segment.length;
+      start = lastClusterEnd;
       const codes = [...segment].map(char => char.codePointAt(0).toString(16));
       const id = glyphPrefix + codes.join('-');
       if (!resources.has(id) && !missing.has(id)) {

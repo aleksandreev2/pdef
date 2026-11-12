@@ -88,19 +88,40 @@ function findDuplicates(chapters) {
   for (const group of groups.values()) {
     if (group.length < 2) continue;
     const [first] = group;
-    const hash = contentHash(first.blocks);
-    const identical = group.every(ch => contentHash(ch.blocks) === hash);
+    const byHash = new Map();
     for (const ch of group) {
-      ch.issues.push(`${duplicateIssue} ${identical ? 'точный дубль' : 'другая версия'}`);
+      const hash = contentHash(ch.blocks);
+      if (!byHash.has(hash)) byHash.set(hash, []);
+      byHash.get(hash).push(ch);
+    }
+    const exact = [...byHash.values()].filter(copies => copies.length > 1);
+    const sameNativeBook = first.number === null && first.sourceGroup &&
+      group.every(ch => ch.sourceGroup === first.sourceGroup);
+    if (sameNativeBook) {
+      for (const copies of exact) addMatch(copies, [copies]);
+    } else {
+      addMatch(group, exact);
+    }
+  }
+  return duplicates;
+
+  function addMatch(group, exact) {
+    const [first] = group;
+    const identical = exact.length === 1 && exact[0].length === group.length;
+    const exactChapters = new Set(exact.flat());
+    const versions = new Map();
+    for (const ch of group) {
+      ch.issues.push(`${duplicateIssue} ${exactChapters.has(ch) ? 'точный дубль' : 'другая версия'}`);
+      versions.set(ch, { file: ch.sourceName, words: contentStats(ch.blocks).words, include: ch.include });
     }
     duplicates.push({
       number: first.number,
       label: chapterLabel(first),
       identical,
-      versions: group.map(ch => ({ file: ch.sourceName, words: contentStats(ch.blocks).words, include: ch.include })),
+      versions: [...versions.values()],
+      exactCopies: exact.map(copies => copies.map(ch => versions.get(ch))),
     });
   }
-  return duplicates;
 }
 
 /** Recheck the selected book without reselecting duplicate versions. */

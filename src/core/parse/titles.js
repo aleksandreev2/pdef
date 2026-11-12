@@ -40,7 +40,7 @@ function isGalleryLabel(text) {
 function numberedHeading(number, text) {
   const title = text.trim();
   const kind = kindFromTitle(title);
-  return kind === KIND.COVER_GALLERY
+  return Number(number) === 0 && kind === KIND.COVER_GALLERY
     ? { kind, number: null, title }
     : { kind: KIND.CHAPTER, number: Number(number), title };
 }
@@ -65,7 +65,7 @@ function parseHeading(raw) {
   if (!s) return null;
 
   // Ведущий маркер заголовка из экспорта: «#000. Название»
-  s = s.replace(/^#\s*/, '');
+  s = s.replace(/^#{1,6}\s*/, '');
   // «48-я глава. Название» встречается в исходниках WORKING.
   s = s.replace(/^(\d{1,4})[-‑–]?(?:я|ая)\s+глава\s*[.:]?\s*/iu, 'Глава $1. ');
 
@@ -91,6 +91,36 @@ function parseHeading(raw) {
   if (m) return { kind: KIND.CHAPTER, number: Number(m[1]), title: '' };
 
   return null;
+}
+
+/** Infer weak number-only or space-separated labels from nearby native siblings. */
+function inferNativeNumbers(parts) {
+  const numbered = new Map();
+  const groups = new Map();
+  for (const [index, part] of parts.entries()) {
+    if (!part.nativeTitle || part.kind) continue;
+    const weak = part.title.match(/^(\d{1,4})(?:\s+(\S.*))?$/su);
+    const parsed = weak ? numberedHeading(weak[1], weak[2] || '') : parseHeading(part.title);
+    if (parsed?.number == null) continue;
+    if (!groups.has(part.siblingGroup)) groups.set(part.siblingGroup, new Map());
+    const siblings = groups.get(part.siblingGroup);
+    let previous = null;
+    for (let step = 1; step <= 3; step += 1) {
+      const candidate = siblings.get(parsed.number - step);
+      if (candidate && index - candidate.index <= 5 &&
+          (!previous || candidate.length > previous.length)) previous = candidate;
+    }
+    const consecutive = (previous?.consecutive || 0) + (previous?.number === parsed.number - 1 ? 1 : 0);
+    const node = { index, number: parsed.number, parsed, weak: !!weak, previous, length: (previous?.length || 0) + 1, consecutive };
+    siblings.set(parsed.number, node);
+    if (node.length >= 3 && consecutive >= 2) {
+      for (let entry = node; entry && !entry.confirmed; entry = entry.previous) {
+        if (entry.weak) numbered.set(entry.index, entry.parsed);
+        entry.confirmed = true;
+      }
+    }
+  }
+  return numbered;
 }
 
 /**
@@ -134,4 +164,4 @@ function isTitleRepeat(paraText, section) {
   return false;
 }
 
-module.exports = { parseHeading, fromFilename, isTitleRepeat, kindFromTitle, isGalleryLabel, stripExt, restoreFilenameChars };
+module.exports = { parseHeading, inferNativeNumbers, fromFilename, isTitleRepeat, kindFromTitle, isGalleryLabel, stripExt, restoreFilenameChars };

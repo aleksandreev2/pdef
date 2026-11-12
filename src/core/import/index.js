@@ -1,18 +1,19 @@
 'use strict';
 
 const fs = require('fs/promises');
+const { createReadStream } = require('fs');
+const { Readable } = require('stream');
 const path = require('path');
 const crypto = require('crypto');
 const JSZip = require('jszip');
 
 const { makeChapter, runsText, KIND, KIND_ORDER } = require('../model');
-const { fromFilename } = require('../parse/titles');
+const { fromFilename, inferNativeNumbers, parseHeading } = require('../parse/titles');
 const { buildBlocks } = require('../parse/blocks');
 const { parseDocx } = require('./docx');
 const { parseTxt } = require('./txt');
-const { parseFb2 } = require('./fb2');
+const { parseFb2Stream } = require('./fb2');
 const { parseKindle } = require('./kindle');
-const { parseHeading } = require('../parse/titles');
 
 const TEXT_EXT = new Set(['txt', 'text', 'md']);
 const DOC_EXT = new Set(['docx', 'gdocx', 'docm']);
@@ -47,7 +48,7 @@ function naturalCompare(a, b) {
 
 /* ───────────────────────── раскрытие входных путей ───────────────────────── */
 
-/** @returns {Promise<Array<{name:string, relPath:string, buffer:Buffer, origin:string}>>} */
+/** Collect a manifest. Read or inflate each file only when its parser needs it. */
 async function collectFiles(inputPaths, warnings) {
   const files = [];
   const seen = new Set();
@@ -57,8 +58,7 @@ async function collectFiles(inputPaths, warnings) {
     for (const e of entries.sort((x, y) => naturalCompare(x.name, y.name))) {
       const full = path.join(dir, e.name);
       if (isJunk(full)) continue;
-      if (e.isDirectory()) await walkDir(full, origin);
-      else await takeFile(full, origin);
+      await visit(full, e.isDirectory(), origin);
     }
   }
 
@@ -70,11 +70,11 @@ async function collectFiles(inputPaths, warnings) {
       if (entry.dir || isJunk(name)) continue;
       const ext = extOf(name);
       if (!TEXT_EXT.has(ext) && !DOC_EXT.has(ext) && !BOOK_EXT.has(ext) && !IMG_EXT.has(ext)) continue;
-      const data = await entry.async('nodebuffer');
       files.push({
         name: path.basename(name),
         relPath: `${zipPath}/${name}`,
-        buffer: data,
+        read: () => entry.async('nodebuffer'),
+        stream: () => Readable.wrap(entry.nodeStream('nodebuffer')),
         origin,
       });
     }
@@ -91,15 +91,25 @@ async function collectFiles(inputPaths, warnings) {
       await expandZip(full, buffer, origin || full);
       return;
     }
-    const buffer = await fs.readFile(full);
-    files.push({ name: path.basename(full), relPath: full, buffer, origin: origin || full });
+    files.push({
+      name: path.basename(full), relPath: full, origin: origin || full,
+      read: () => fs.readFile(full), stream: () => createReadStream(full),
+    });
+  }
+
+  async function visit(file, directory, origin) {
+    try {
+      if (directory) await walkDir(file, origin);
+      else await takeFile(file, origin);
+    } catch (e) {
+      warnings.push(`Не удалось прочитать ${file}: ${e.message}`);
+    }
   }
 
   for (const p of inputPaths) {
     try {
       const st = await fs.stat(p);
-      if (st.isDirectory()) await walkDir(p, p);
-      else await takeFile(p, p);
+      await visit(p, st.isDirectory(), p);
     } catch (e) {
       warnings.push(`Не удалось прочитать ${p}: ${e.message}`);
     }
@@ -123,7 +133,7 @@ async function importSources(inputPaths, opts = {}) {
 
   const files = await collectFiles(inputPaths, warnings);
   if (!files.length) {
-    return { chapters: [], assets: new Map(), loose: [], warnings: ['Не найдено файлов TXT, DOCX, FB2, MOBI или AZW3'] };
+    return { chapters: [], assets: new Map(), loose: [], warnings: [...warnings, 'Не найдено файлов TXT, DOCX, FB2, MOBI или AZW3'] };
   }
 
   /* Реестр ресурсов с дедупликацией по SHA-1: одна и та же иллюстрация,
@@ -142,16 +152,21 @@ async function importSources(inputPaths, opts = {}) {
   const chapters = [];
   const loose = []; // изображения, положенные рядом (кандидаты в обложку)
 
-  const docs = files.filter((f) => {
-    const ext = extOf(f.name);
-    return TEXT_EXT.has(ext) || DOC_EXT.has(ext) || BOOK_EXT.has(ext);
-  });
-  const images = files.filter((f) => IMG_EXT.has(extOf(f.name)));
-
-  for (const img of images) {
+  const docs = [];
+  for (const img of files) {
     const ext = extOf(img.name);
-    const id = addAsset(img.buffer, ext, IMG_MIME[ext]);
-    loose.push({ assetId: id, name: img.name, path: img.relPath });
+    if (!IMG_EXT.has(ext)) {
+      docs.push(img);
+      continue;
+    }
+    try {
+      const id = addAsset(await img.read(), ext, IMG_MIME[ext]);
+      loose.push({ assetId: id, name: img.name, path: img.relPath });
+    } catch (e) {
+      warnings.push(`Не удалось прочитать ${img.relPath}: ${e.message}`);
+    } finally {
+      img.read = img.stream = null;
+    }
   }
 
   function appendChapter(file, rawParas, section, issues, encoding, sourceOrder) {
@@ -192,25 +207,34 @@ async function importSources(inputPaths, opts = {}) {
     let rawParas = [];
     let encoding = null;
 
-    if (!file.buffer.length) {
-      appendChapter(file, [], section, issues, encoding);
-      continue;
-    }
-
     try {
+      const buffer = ext === 'fb2' ? null : await file.read();
+      if (buffer?.length === 0) {
+        appendChapter(file, [], section, issues, encoding);
+        continue;
+      }
       if (BOOK_EXT.has(ext)) {
-        const res = ext === 'fb2' ? parseFb2(file.buffer,addAsset) : await parseKindle(file.buffer,addAsset);
+        const res = ext === 'fb2' ? await parseFb2Stream(file.stream(), addAsset) : await parseKindle(buffer, addAsset);
+        if (!res) {
+          appendChapter(file, [], section, issues, encoding);
+          continue;
+        }
         const before = chapters.length;
+        const inferred = ext === 'fb2' ? inferNativeNumbers(res.sections) : new Map();
         for (let i=0;i<res.sections.length;i++) {
           const part = res.sections[i];
           const label = part.title || (res.sections.length===1 ? res.title : '') || 'Раздел '+(i+1);
-          const heading = parseHeading(label);
+          const fallbackLabel = ext === 'fb2' && (!part.nativeTitle || /^\d{1,4}$/.test(label));
+          const heading = inferred.get(i) || (fallbackLabel ? null : parseHeading(label));
           const parsed = heading || { title: label, number: null, kind: KIND.CHAPTER };
           let raw = part.rawParas;
           const first = raw[0];
-          // Numbered headings are removed by buildBlocks. A named heading has
-          // already supplied this section's title; preserve other subheadings.
-          if (!heading && /^Heading[12]$/.test(first?.style || '') &&
+          if (part.headingParas) {
+            const headings = new Set(part.headingParas);
+            raw = raw.filter(para => !headings.has(para));
+            parsed.preserveOpening = true;
+          // Kindle still infers structural headings from the imported runs.
+          } else if (!heading && /^Heading[12]$/.test(first?.style || '') &&
               runsText(first.runs || []).trim().replace(/\s+/g,' ') === label.trim().replace(/\s+/g,' ')) {
             const next = raw[1];
             if (/^Heading[12]$/.test(next?.style || '') && parseHeading(runsText(next.runs || []))) {
@@ -227,15 +251,16 @@ async function importSources(inputPaths, opts = {}) {
         bookMetadata.push({title:res.title || '',author:res.author || '',language:res.language || ''});
         continue;
       } else if (DOC_EXT.has(ext)) {
-        const res = await parseDocx(file.buffer, addAsset);
+        const res = await parseDocx(buffer, addAsset);
         rawParas = res.rawParas;
         issues.push(...res.warnings);
       } else {
-        const res = parseTxt(file.buffer);
+        const res = parseTxt(buffer);
         rawParas = res.rawParas;
         encoding = res.encoding;
         issues.push(...res.warnings);
       }
+      appendChapter(file, rawParas, section, issues, encoding);
     } catch (e) {
       chapters.push(
         makeChapter({
@@ -250,10 +275,9 @@ async function importSources(inputPaths, opts = {}) {
           issues: [`Файл не разобран: ${e.message}`],
         }),
       );
-      continue;
+    } finally {
+      file.read = file.stream = null;
     }
-
-    appendChapter(file,rawParas,section,issues,encoding);
   }
 
   sortChapters(chapters);

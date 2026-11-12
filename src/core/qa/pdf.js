@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs/promises');
+const { bodyText } = require('../model');
 
 /**
  * Структурная проверка готового PDF одним проходом (п.8.1 спецификации).
@@ -33,7 +34,8 @@ async function checkPdf(pdfPath, { book, expected }) {
 
   let doc;
   try {
-    doc = await pdfjs.getDocument({ data, useSystemFonts: false, isEvalSupported: false }).promise;
+    doc = await pdfjs.getDocument({ data, useSystemFonts: false, isEvalSupported: false,
+      fontExtraProperties: true, disableFontFace: true }).promise;
   } catch (e) {
     return {
       ok: false,
@@ -42,32 +44,65 @@ async function checkPdf(pdfPath, { book, expected }) {
       pages: 0,
     };
   }
+  try {
+    return await inspectPdf(doc, { book, expected, pdfjs, checks, notes });
+  } finally {
+    await doc.destroy();
+  }
+}
 
+async function inspectPdf(doc, { book, expected, pdfjs, checks, notes }) {
   checks.push(check('PDF открывается', true));
   const numPages = doc.numPages;
   checks.push(check('Количество страниц больше нуля', numPages > 0, `страниц: ${numPages}`));
 
-  /* ── обход страниц одним проходом ── */
+  const tocFirst = expected.tocFirstPage || 3;
+  const tocPages = expected.tocPages || 0;
+  const aboutPage = tocFirst + tocPages;
+  const firstContent = Math.min(numPages, expected.firstContentPage || 1);
+  const imagePages = expected.imagePages ? new Set(expected.imagePages) : null;
+  const imageOperators = new Set([pdfjs.OPS.paintImageXObject, pdfjs.OPS.paintInlineImageXObject,
+    pdfjs.OPS.paintInlineImageXObjectGroup, pdfjs.OPS.paintImageXObjectRepeat]);
+  const fonts = new Map();
+  let sampledContentFonts = false;
   const pageInfo = [];
   for (let i = 1; i <= numPages; i += 1) {
     const page = await doc.getPage(i);
-    const [textContent, annots, ops] = await Promise.all([
+    const [textContent, annots] = await Promise.all([
       page.getTextContent(),
-      page.getAnnotations(),
-      page.getOperatorList(),
+      i === 2 || (i >= tocFirst && i <= aboutPage) ? page.getAnnotations() : [],
     ]);
     const text = textContent.items.map((it) => it.str).join('');
-    const imageOps = ops.fnArray.filter(
-      (fn) => fn === pdfjs.OPS.paintImageXObject || fn === pdfjs.OPS.paintJpegXObject || fn === pdfjs.OPS.paintInlineImageXObject,
-    ).length;
+    const textLength = text.replace(/\s/g, '').length;
+    const sampleFonts = i === 2 || (!sampledContentFonts && i >= firstContent && textLength > 0);
+    let imageOps = 0;
+    let drawOps = 0;
+    if (!imagePages || imagePages.has(i) || i <= 2 || !textLength || sampleFonts) {
+      const ops = await page.getOperatorList();
+      drawOps = ops.fnArray.length;
+      for (let j = 0; j < drawOps; j += 1) {
+        const operation = ops.fnArray[j];
+        if (imageOperators.has(operation)) imageOps += 1;
+        if (sampleFonts && operation === pdfjs.OPS.setFont) {
+          const [id] = ops.argsArray[j];
+          if (!fonts.has(id)) {
+            const font = await new Promise(resolve => page.commonObjs.get(id, resolve));
+            fonts.set(id, Boolean(font.data?.length && !font.missingFile));
+          }
+          if (i >= firstContent) sampledContentFonts = true;
+        }
+      }
+    }
     const links = annots.filter((a) => a.subtype === 'Link');
     pageInfo.push({
       index: i,
-      text,
-      textLength: text.replace(/\s/g, '').length,
+      textLength,
       images: imageOps,
       links,
-      drawOps: ops.fnArray.length,
+      drawOps,
+      hasSubtitle: i < firstContent && text.includes(book.subtitle || 'Полное издание'),
+      hasTocHeader: i >= tocFirst && i < aboutPage && text.includes('Оглавление'),
+      hasAboutHeader: i === aboutPage && text.includes('Официальная страница команды'),
       hasBadGlyphs: /[\u0000\uFFFD]/u.test(text),
     });
     page.cleanup();
@@ -88,24 +123,23 @@ async function checkPdf(pdfPath, { book, expected }) {
   }
 
   /* ── титульная, оглавление, сведения ── */
-  const titlePages = pageInfo.filter((p) => p.text.includes(book.subtitle || 'Полное издание'));
+  const titlePages = pageInfo.filter((p) => p.hasSubtitle);
   checks.push(check('Титульная страница одна', titlePages.length === 1, `найдено: ${titlePages.length}`));
 
   // Заголовок «Оглавление» печатается один раз, а сами записи могут занимать
   // несколько страниц — поэтому «одно оглавление» и «сколько страниц» это
   // разные вещи.
-  const tocHeaders = pageInfo.filter((p) => /Оглавление/.test(p.text));
-  const tocFirst = expected.tocFirstPage || 3;
-  const tocRange = pageInfo.slice(tocFirst - 1, tocFirst - 1 + (expected.tocPages || 0));
+  const tocHeaders = pageInfo.filter((p) => p.hasTocHeader);
+  const tocRange = pageInfo.slice(tocFirst - 1, tocFirst - 1 + tocPages);
   checks.push(
     check(
       'Оглавление одно',
-      tocHeaders.length === 1 && tocRange.length === expected.tocPages,
+      tocHeaders.length === 1 && tocRange.length === tocPages,
       `заголовок «Оглавление» встречается ${tocHeaders.length} раз, страниц оглавления: ${tocRange.length}`,
     ),
   );
 
-  const aboutPages = pageInfo.filter((p) => p.text.includes('Официальная страница команды'));
+  const aboutPages = pageInfo.filter((p) => p.hasAboutHeader);
   checks.push(check('Страница сведений о переводе одна', aboutPages.length === 1, `найдено: ${aboutPages.length}`));
 
   /* ── оглавление кликабельно ── */
@@ -155,7 +189,7 @@ async function checkPdf(pdfPath, { book, expected }) {
     : [];
   const probesOk = probeIdx.every((pn) => {
     const p = pageInfo[pn - 1];
-    return p && p.textLength > 0;
+    return p && (p.textLength > 0 || p.images > 0);
   });
   checks.push(
     check(
@@ -166,14 +200,21 @@ async function checkPdf(pdfPath, { book, expected }) {
   );
 
   /* ── текст извлекается ── */
-  const textPages = pageInfo.filter((p) => p.textLength > 80);
+  const textPages = pageInfo.filter((p) => p.index >= firstContent && p.textLength > 0);
+  const hasSourceText = book.chapters.some(chapter => chapter.include && chapter.blocks.some(block => bodyText(block).trim()));
   checks.push(
     check(
       'Текст извлекается (PDF-текст выделяемый и копируемый)',
-      textPages.length >= Math.max(1, Math.floor(numPages * 0.5)),
+      !hasSourceText || textPages.length > 0,
       `страниц с извлекаемым текстом: ${textPages.length} из ${numPages}`,
     ),
   );
+
+  if (imagePages?.size) {
+    const missing = [...imagePages].filter(index => !pageInfo[index - 1]?.images);
+    checks.push(check('Иллюстрации присутствуют на ожидаемых страницах', !missing.length,
+      missing.length ? `страницы: ${missing.slice(0, 5).join(', ')}` : `страниц с иллюстрациями: ${imagePages.size}`));
+  }
 
   /* ── пустые страницы ── */
   const emptyPages = pageInfo.filter((p) => p.textLength === 0 && p.images === 0 && p.drawOps < 6);
@@ -196,23 +237,9 @@ async function checkPdf(pdfPath, { book, expected }) {
   );
 
   /* ── встроенные шрифты ── */
-  try {
-    const page = await doc.getPage(Math.min(numPages, expected.firstContentPage || 1));
-    const content = await page.getTextContent();
-    const fontNames = new Set(content.items.map((i) => i.fontName).filter(Boolean));
-    checks.push(
-      check(
-        'Шрифты встроены в документ',
-        fontNames.size > 0,
-        `использовано начертаний на пробной странице: ${fontNames.size}`,
-      ),
-    );
-    page.cleanup();
-  } catch (e) {
-    notes.push(`Проверка шрифтов не выполнена: ${e.message}`);
-  }
-
-  await doc.destroy();
+  const embeddedFonts = [...fonts.values()].filter(Boolean).length;
+  checks.push(check('Шрифты встроены в документ', fonts.size > 0 && embeddedFonts === fonts.size,
+    `встроено начертаний на пробных страницах: ${embeddedFonts} из ${fonts.size}`));
 
   // Страницы, представительные для визуальной проверки (п.8.2).
   const sample = pickVisualSample(pageInfo, expected);
@@ -236,16 +263,17 @@ function pickVisualSample(pageInfo, expected) {
   };
 
   add(2, 'титульная страница');
-  const toc = pageInfo.find((p) => /Оглавление/.test(p.text));
+  const toc = pageInfo.find((p) => p.hasTocHeader);
   if (toc) add(toc.index, 'оглавление');
 
 
   const firstText = pageInfo.find((p) => p.index >= (expected.firstContentPage || 1) && p.textLength > 200);
   if (firstText) add(firstText.index, 'первая обычная текстовая страница');
 
-  const dense = [...pageInfo]
-    .filter((p) => p.index > (expected.firstContentPage || 1) + 2)
-    .sort((a, b) => b.textLength - a.textLength)[Math.floor(0)];
+  const dense = pageInfo.reduce((longest, page) => {
+    return page.index > (expected.firstContentPage || 1) + 2 && (!longest || page.textLength > longest.textLength)
+      ? page : longest;
+  }, null);
   if (dense) add(dense.index, 'плотная страница из середины');
 
   const special = pageInfo.find((p) => p.images > 0 && p.index > 2);

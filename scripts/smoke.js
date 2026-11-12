@@ -10,9 +10,9 @@
 
 const path = require('path');
 const fs = require('fs/promises');
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, utilityProcess } = require('electron');
 
-const pipeline = require('../src/core/pipeline');
+const { registerBookHandlers } = require('../src/main/book-service');
 const { DEFAULT_STYLE, LIMITS } = require('../src/core/style');
 const { GENRES } = require('../src/core/genres');
 const { svgTitleMark, svgSceneBreak, svgFolio } = require('../src/core/signature');
@@ -42,11 +42,8 @@ function registerIpc(win) {
   const send = (p) => {
     if (win && !win.isDestroyed()) win.webContents.send('progress', p);
   };
-  ipcMain.handle('book:analyze', async (_e, paths) => pipeline.analyze(paths, send));
-  ipcMain.handle('book:applyEdits', async (_e, edits) => pipeline.applyEdits(edits));
-  ipcMain.handle('book:build', async (_e, opts) => pipeline.build(opts, send));
-  ipcMain.handle('book:previewFrontMatter', async (_e, opts) => require('../src/core/pdf/front-matter-preview').previewFrontMatter(opts));
-  ipcMain.handle('asset:dataUrl', async (_e, id) => pipeline.assetDataUrl(id));
+  const service = registerBookHandlers({ ipcMain, utilityProcess, onProgress: send });
+  app.on('will-quit', () => service.close());
   ipcMain.handle('style:defaults', async () => ({
     style: DEFAULT_STYLE,
     genres: GENRES.map(g => ({ ...g, opener: svgTitleMark(g.accent, g.id), divider: svgSceneBreak(g.accent, g.id), folio: svgFolio(g.accent,g.id) })),
@@ -59,6 +56,8 @@ function registerIpc(win) {
   }
   ipcMain.handle('dialog:pickOutDir', async () => args.out);
   ipcMain.handle('output:getDirectory', async () => null);
+  ipcMain.handle('book:getMetadata', async () => ({}));
+  ipcMain.handle('book:saveMetadata', async () => {});
   const updateStatus={currentVersion:require('../package.json').version,enabled:false,status:'disabled',release:null,notify:false,checkedAt:0,message:''};
   ipcMain.handle('updates:status',()=>updateStatus);
   ipcMain.handle('updates:check',()=>updateStatus);

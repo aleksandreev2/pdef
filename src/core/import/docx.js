@@ -1,7 +1,7 @@
 'use strict';
 
 const JSZip = require('jszip');
-const { XMLParser } = require('fast-xml-parser');
+const { XMLParser, XMLValidator } = require('fast-xml-parser');
 const { makeRun } = require('../model');
 
 const EMU_PER_PT = 12700; // 914400 EMU = 1 inch = 72 pt
@@ -37,6 +37,20 @@ function attrs(node) {
 
 function findAll(node, name) {
   return kids(node).filter((c) => tagName(c) === name);
+}
+
+function* visibleChildren(node) {
+  for (const child of kids(node)) {
+    const name = tagName(child);
+    if (name === 'w:sdt') {
+      const content = find(child, 'w:sdtContent');
+      if (content) yield* visibleChildren(content);
+    } else if (['w:ins', 'w:moveTo', 'w:customXml', 'w:smartTag'].includes(name)) {
+      yield* visibleChildren(child);
+    } else if (name !== 'w:del' && name !== 'w:moveFrom') {
+      yield child;
+    }
+  }
 }
 
 function find(node, name) {
@@ -103,6 +117,8 @@ async function parseDocx(buffer, addAsset) {
   if (!docFile) throw new Error('В .docx нет word/document.xml — файл повреждён или это не DOCX');
 
   const docXml = await docFile.async('string');
+  const valid = XMLValidator.validate(docXml);
+  if (valid !== true) throw new Error('Повреждённый XML DOCX: ' + valid.err.msg);
   const tree = parser.parse(docXml);
 
   // Связи rId → цель
@@ -147,7 +163,7 @@ async function parseDocx(buffer, addAsset) {
   if (!body) throw new Error('В .docx нет w:body');
 
   const rawParas = [];
-  for (const node of kids(body)) {
+  for (const node of visibleChildren(body)) {
     const name = tagName(node);
     if (name === 'w:p') {
       await emitParagraph(node, rawParas, { rels, mediaAsset, numOrdered });
@@ -217,7 +233,7 @@ async function emitParagraph(p, out, ctx) {
   };
 
   const walkRuns = async (container, inheritedLink) => {
-    for (const node of kids(container)) {
+    for (const node of visibleChildren(container)) {
       const name = tagName(node);
 
       if (name === 'w:hyperlink') {
@@ -301,25 +317,47 @@ async function readImage(node, ctx) {
 
 /** Таблица → системный блок: структура сохраняется, в прозу не превращается. */
 async function emitTable(tbl, out, ctx) {
-  const lines = [];
-  for (const tr of findAll(tbl, 'w:tr')) {
-    const cells = [];
-    for (const tc of findAll(tr, 'w:tc')) {
-      const sub = [];
-      for (const p of findAll(tc, 'w:p')) {
-        await emitParagraph(p, sub, { ...ctx, numOrdered: new Map() });
+  let lines = [];
+  const flushTable = () => {
+    if (lines.length) out.push({ table: true, lines });
+    lines = [];
+  };
+  const cellCtx = { ...ctx, numOrdered: new Map() };
+  for (const tr of visibleChildren(tbl)) {
+    if (tagName(tr) !== 'w:tr') continue;
+    let cells = [];
+    const flushRow = () => {
+      if (cells.length) lines.push([makeRun(cells.join('  ·  '))]);
+      cells = [];
+    };
+    for (const tc of visibleChildren(tr)) {
+      if (tagName(tc) !== 'w:tc') continue;
+      let text = [];
+      const flushCell = () => {
+        const value = text.join(' ').trim();
+        if (value) cells.push(value);
+        text = [];
+      };
+      for (const p of visibleChildren(tc)) {
+        if (tagName(p) !== 'w:p') continue;
+        const sub = [];
+        await emitParagraph(p, sub, cellCtx);
+        for (const para of sub) {
+          if (para.image) {
+            flushCell();
+            flushRow();
+            flushTable();
+            out.push(para);
+          } else {
+            text.push(para.runs.map(run => run.text).join(''));
+          }
+        }
       }
-      const text = sub
-        .filter((s) => s.runs)
-        .map((s) => s.runs.map((r) => r.text).join(''))
-        .join(' ')
-        .trim();
-      cells.push(text);
+      flushCell();
     }
-    const line = cells.filter(Boolean).join('  ·  ');
-    if (line) lines.push([makeRun(line)]);
+    flushRow();
   }
-  if (lines.length) out.push({ table: true, lines });
+  flushTable();
 }
 
 module.exports = { parseDocx };

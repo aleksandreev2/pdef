@@ -89,9 +89,7 @@ function buildBlocks(rawParas, section) {
       cleaned.push({ kind: 'table', lines: p.lines });
       continue;
     }
-    const runs = (p.runs || [])
-      .map((r) => ({ ...r, text: trimPara(r.text) === '' ? r.text.replace(/\s+/g, ' ') : r.text }))
-      .map((r) => ({ ...r, text: r.text.replace(/\s+/g, ' ') }));
+    const runs = (p.runs || []).map(r => ({ ...r, text: r.text.replace(/[^\S\u00a0\u202f]+/g, ' ') }));
     const text = trimPara(runsText(runs));
     if (!text) continue; // пустые параграфы экспорта — технический мусор
     cleaned.push({
@@ -109,7 +107,7 @@ function buildBlocks(rawParas, section) {
   // Обычный текст со словами «глава» и «пролог» остаётся в книге.
   let droppedTitle = false;
   let headingFromText = null;
-  const firstText = cleaned.find((c) => c.kind === 'text');
+  const firstText = section.preserveOpening ? null : cleaned.find((c) => c.kind === 'text');
   const candidate = firstText && firstText.text.length <= 200 ? parseHeading(firstText.text) : null;
   const explicit = firstText && /^(?:#\s*)?(?:(?:глава|chapter|ch\.?|гл\.?|пролог|prologue|эпилог|epilogue|послесловие|afterword|экстра|extra|бонус|bonus)(?![\p{L}])|\d{1,4}[-‑–]?(?:я|ая)\s+глава(?![\p{L}]))/iu.test(firstText.text);
   const strictHeading = firstText && (
@@ -117,11 +115,12 @@ function buildBlocks(rawParas, section) {
     /^(?:#\s*)?(?:пролог|prologue|эпилог|epilogue|послесловие(?:\s+автора)?|afterword|экстра|extra|бонус|bonus)\s*(?:$|[.:·]|[—–―-](?:\s|$))/iu.test(firstText.text) ||
     /^\d{1,4}[-‑–]?(?:я|ая)\s+глава\s*(?:$|[.:])/iu.test(firstText.text));
   const formattedHeading = firstText && (isHeadingStyle(firstText.style) || (firstText.runs.every(r => r.b) && firstText.align === 'center'));
+  const markedHeading = firstText && /^#{1,6}\s*\d{1,4}\s*[.:·)\]—–‒―-]/u.test(firstText.text);
   const repeat = firstText && isTitleRepeat(firstText.text, section) &&
     (!explicit || strictHeading || formattedHeading) && !/^\d+[—-][\p{L}]/u.test(firstText.text);
   const galleryHeading = candidate?.kind === KIND.COVER_GALLERY &&
     (formattedHeading || isGalleryLabel(firstText.text) || isGalleryLabel(candidate.title));
-  if (firstText && ((candidate && explicit && (strictHeading || formattedHeading)) || galleryHeading || repeat)) {
+  if (firstText && ((candidate && (strictHeading || formattedHeading || markedHeading)) || galleryHeading || repeat)) {
     headingFromText = candidate;
     const index = cleaned.indexOf(firstText);
     cleaned.splice(index, 1);
