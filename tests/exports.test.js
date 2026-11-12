@@ -28,10 +28,17 @@ for(const format of ['txt','fb2']) test(`${format.toUpperCase()} exports only se
   if(format==='fb2'){
     assert.equal(XMLValidator.validate(text),true);
     assert.ok(text.includes('Новая книга &amp; путь'));assert.ok(text.includes('content-type="image/png"'));
+    assert.match(text, /Документ создан с помощью <a l:href="https:\/\/github\.com\/aleksandreev2\/pdef"><strong>PDeF<\/strong><\/a>\./);
+    assert.match(text, /Разработчик — <a l:href="https:\/\/ranobelib\.me\/ru\/user\/726236"><strong>dollar<\/strong><\/a>/);
+    assert.match(text, /владелец команды «<a l:href="https:\/\/ranobelib\.me\/ru\/team\/11969--dom-nekromanta">Дом Некроманта<\/a>»\./);
     const imported=await importSources([report.fb2.path]);
     assert.equal(imported.title,'Новая книга & путь');assert.equal(imported.chapters.length,2);
     assert.ok(imported.chapters.flatMap(c=>c.blocks).some(b=>b.type==='image'));
-  } else assert.ok(text.includes('* * *'));
+  } else {
+    assert.ok(text.includes('* * *'));
+    assert.ok(text.includes('Документ создан с помощью PDeF.\r\nРазработчик — dollar\r\nвладелец команды «Дом Некроманта».\r\n\r\n' +
+      'https://github.com/aleksandreev2/pdef\r\nhttps://ranobelib.me/ru/user/726236\r\nhttps://ranobelib.me/ru/team/11969--dom-nekromanta'));
+  }
 });
 test('FB2 preserves cover, inline formatting, lists, links and image resources',async t=>{
   const dir=await fixture(t),p=path.join(dir,'book.fb2');
@@ -115,8 +122,11 @@ test('Kindle export produces real MOBI and KF8 files, including when EPUB is unc
     assert.equal(data.readUInt32BE(data.readUInt32BE(78)+36),format==='azw3'?8:6,'Actual MOBI/KF8 header version');
     assert.equal(report[format].chapters,2);assert.equal(report.qa[format].ok,true);
     const imported=await importSources([report[format].path]);
-    const text=imported.chapters.flatMap(c=>c.blocks.map(blockText)).join(' ');
+    const blocks=imported.chapters.flatMap(c=>c.blocks);
+    const text=blocks.map(blockText).join(' ');
     assert.ok(text.includes('За окном светало.'));assert.ok(text.includes('Он отправился в путь.'));assert.ok(!text.includes('Этот текст не должен'));
+    assert.ok(text.includes('владелец команды «Дом Некроманта».'));
+    assert.ok(blocks.some(b => b.runs?.some(r => r.text === 'Дом Некроманта' && r.link === 'https://ranobelib.me/ru/team/11969--dom-nekromanta')));
   }
   assert.ok(!(await fs.readdir(dir)).some(n=>n.endsWith('.epub')));
 });

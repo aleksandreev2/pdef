@@ -28,22 +28,21 @@ async function titlePage(t, overrides = {}, team = 'Дом Некроманта'
   return {items: items.filter(i => i.str.trim()), annotations: await page.getAnnotations(), geom: geometry(style)};
 }
 
-test('PDF title page credits the application with a visible clickable repository link', async t => {
+test('PDF title page shows the full PDeF credit with three clickable names', async t => {
   const {items, annotations} = await titlePage(t, {genre: 'erotica'});
   const text = items.map(i => i.str).join(' ');
-  assert.match(text, /PDFMaker Mobile/);
-  assert.match(text, /github\.com\/aleksandreev2\/pdef/);
-  const links = annotations.filter(a => a.url === 'https://github.com/aleksandreev2/pdef');
-  assert.ok(links.length >= 1, 'repository has a real PDF Link annotation on the title');
-  const address = items.find(i => i.str.includes('github.com/aleksandreev2/pdef'));
-  assert.ok(links.some(a => a.rect[0] <= address.transform[4] + 1 && a.rect[2] >= address.transform[4] + address.width - 1), 'the visible address is clickable');
+  assert.match(text, /Документ создан с помощью PDeF\s*\. Разработчик — dollar владелец команды «\s*Дом Некроманта\s*»\./);
+  assert.doesNotMatch(text, /Создано в PDFMaker Mobile/);
+  for (const url of ['https://github.com/aleksandreev2/pdef', 'https://ranobelib.me/ru/user/726236', 'https://ranobelib.me/ru/team/11969--dom-nekromanta']) {
+    assert.ok(annotations.some(a => a.url === url), `missing PDF link ${url}`);
+  }
   assert.ok(annotations.some(a => a.url === 'https://example.test/translators'), 'translation credit remains linked');
 });
 
 test('title credits stay within margins and do not overlap with a large wrapped translation credit', async t => {
   const {items, annotations, geom} = await titlePage(t, {signature: false, creditBottomMm: 0, creditSize: 16},
     'Длинное название команды перевода, которое занимает несколько строк на титульной странице');
-  assert.match(items.map(i => i.str).join(' '), /PDFMaker Mobile/);
+  assert.match(items.map(i => i.str).join(' '), /Документ создан с помощью PDeF/);
   for (const item of items) {
     const x = item.transform[4], y = item.transform[5];
     assert.ok(x >= geom.contentX - .5 && x + item.width <= geom.contentX + geom.contentW + .5, 'horizontal bounds: ' + item.str);

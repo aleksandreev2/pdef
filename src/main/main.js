@@ -31,7 +31,7 @@ if (checkIndex >= 0) {
   require('fs').mkdirSync(path.join(checkDir, 'profile'), {recursive: true});
   app.setPath('userData', path.join(checkDir, 'profile'));
 }
-const outputPreferences = () => createOutputPreferences(path.join(app.getPath('userData'), 'preferences.json'));
+const outputPreferences = createOutputPreferences(path.join(app.getPath('userData'), 'preferences.json'));
 
 let mainWindow = null;
 
@@ -96,14 +96,16 @@ ipcMain.handle('dialog:pickFolder', async () => {
 ipcMain.handle('dialog:pickOutDir', async () => {
   const res = await dialog.showOpenDialog(mainWindow, {
     title: 'Выберите постоянную папку экспорта',
-    defaultPath: await outputPreferences().get() || undefined,
+    defaultPath: await outputPreferences.get() || undefined,
     properties: ['openDirectory', 'createDirectory'],
   });
   if (res.canceled) return null;
-  return outputPreferences().set(res.filePaths[0]);
+  return outputPreferences.set(res.filePaths[0]);
 });
 
-ipcMain.handle('output:getDirectory', async () => outputPreferences().get());
+ipcMain.handle('output:getDirectory', () => outputPreferences.get());
+ipcMain.handle('book:getMetadata', () => outputPreferences.getMetadata());
+ipcMain.handle('book:saveMetadata', (_e, edits) => outputPreferences.setMetadata(edits));
 
 ipcMain.handle('updates:status', () => updates().status());
 ipcMain.handle('updates:check', (_e, manual) => updates().check({ manual: manual === true }));
@@ -231,4 +233,12 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', (event) => {
+  const saving = outputPreferences.pendingWrite();
+  if (saving) {
+    event.preventDefault();
+    saving.then(() => app.quit());
+  }
 });

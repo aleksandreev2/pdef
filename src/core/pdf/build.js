@@ -10,13 +10,7 @@ const { buildChapterFlow, paginate } = require('./layout');
 const { renderPage, drawLine } = require('./render');
 const { drawTitleMark, drawPageFrame } = require('../signature');
 const { chapterLabel, chapterKicker } = require('../model');
-const {
-  PDEF_NAME,
-  PDEF_URL,
-  DEVELOPER_NAME,
-  DEVELOPER_URL,
-  DEVELOPER_TEAM,
-} = require('../credits');
+const { ATTRIBUTION_LINES } = require('../credits');
 
 /**
  * Сборка мобильного PDF из единого представления книги.
@@ -26,6 +20,8 @@ const {
  */
 
 const TOC_LINE_FACTOR = 1.42;
+const ATTRIBUTION_SIZE = 8.6;
+const ATTRIBUTION_STEP = ATTRIBUTION_SIZE * 1.45;
 
 function fmtNumber(n) {
   return new Intl.NumberFormat('ru-RU').format(n);
@@ -393,22 +389,12 @@ function drawTitlePage(doc, book, geom, style, ctx, sectionCount) {
     { text: 'Перевод выполнен командой ' },
     { text: book.team, b: true, link: book.teamUrl },
   ], 'serif', style.creditSize, geom, ctx);
-  const appSize = 7.8;
-  const repoSize = 7.4;
-  const appLines = centeredLines([
-    { text: 'Создано в ' },
-    { text: 'PDFMaker Mobile', b: true, link: PDEF_URL },
-  ], 'sans', appSize, geom, ctx);
-  const repoLines = centeredLines([
-    { text: PDEF_URL.replace(/^https:\/\//, ''), link: PDEF_URL },
-  ], 'sans', repoSize, geom, ctx);
-  const appY = geom.contentBottom - (appLines.length * appSize + repoLines.length * repoSize) * 1.45;
+  const appY = geom.contentBottom - ATTRIBUTION_LINES.length * ATTRIBUTION_STEP;
   // Reserve the application footer even when the translator's bottom offset is zero.
   const lastCreditY = Math.min(geom.contentBottom - mm(style.creditBottomMm), appY - mm(3) - style.creditSize * 1.45);
   y = lastCreditY - (creditLines.length - 1) * style.creditSize * 1.45;
   drawCenteredLines(doc, creditLines, y, style.creditSize, style.textColor, ctx, style.accent);
-  const repoY = drawCenteredLines(doc, appLines, appY, appSize, '#77737D', ctx, style.accent);
-  drawCenteredLines(doc, repoLines, repoY, repoSize, '#77737D', ctx, style.accent);
+  drawAttribution(doc, appY, geom, style.accent);
 }
 
 function drawTocPage(doc, entries, opts) {
@@ -513,40 +499,23 @@ function drawTranslationPage(doc, book, geom, style, ctx) {
     .lineTo(geom.pageW / 2 + mm(13), creditRuleY)
     .stroke();
 
-  let creditY = creditRuleY + mm(4);
-  drawCenteredSegments(doc, [
-    { text: 'Документ создан с помощью ', font: FONT.sans, color: '#6B6872' },
-    { text: PDEF_NAME, font: FONT.sansB, color: style.accent, url: PDEF_URL },
-    { text: '.', font: FONT.sans, color: '#6B6872' },
-  ], creditY, 8.6, geom);
-
-  creditY += 11.5;
-  drawCenteredSegments(doc, [
-    { text: 'Разработчик — ', font: FONT.sans, color: '#6B6872' },
-    { text: DEVELOPER_NAME, font: FONT.sansB, color: style.accent, url: DEVELOPER_URL },
-  ], creditY, 8.4, geom);
-
-  creditY += 10.8;
-  drawCenteredSegments(doc, [
-    { text: `владелец команды «${DEVELOPER_TEAM}».`, font: FONT.sans, color: '#77737D' },
-  ], creditY, 8.1, geom);
+  drawAttribution(doc, creditRuleY + mm(4), geom, style.accent);
 }
 
-function drawCenteredSegments(doc, segments, y, size, geom) {
-  const widths = segments.map((segment) => {
-    doc.font(segment.font || FONT.sans).fontSize(size);
-    return doc.widthOfString(segment.text);
-  });
-  const total = widths.reduce((sum, width) => sum + width, 0);
-  let x = geom.contentX + (geom.contentW - total) / 2;
-
-  for (let i = 0; i < segments.length; i += 1) {
-    const segment = segments[i];
-    const width = widths[i];
-    doc.font(segment.font || FONT.sans).fontSize(size).fillColor(segment.color || '#6B6872');
-    doc.text(segment.text, x, y, { lineBreak: false });
-    if (segment.url) doc.link(x, y - 1, width, size * 1.35, segment.url);
-    x += width;
+function drawAttribution(doc, y, geom, accent) {
+  doc.fontSize(ATTRIBUTION_SIZE);
+  for (const line of ATTRIBUTION_LINES) {
+    const widths = line.map(run => doc.font(run.b ? FONT.sansB : FONT.sans).widthOfString(run.text));
+    const total = widths.reduce((sum, width) => sum + width, 0);
+    let x = geom.contentX + (geom.contentW - total) / 2;
+    for (const [index, run] of line.entries()) {
+      const width = widths[index];
+      doc.font(run.b ? FONT.sansB : FONT.sans).fillColor(run.link ? accent : '#6B6872');
+      doc.text(run.text, x, y, { lineBreak: false });
+      if (run.link) doc.link(x, y - 1, width, ATTRIBUTION_SIZE * 1.35, run.link);
+      x += width;
+    }
+    y += ATTRIBUTION_STEP;
   }
 }
 

@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('api', {
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   pickOutDir: () => ipcRenderer.invoke('dialog:pickOutDir'),
   outputDirectory: () => ipcRenderer.invoke('output:getDirectory'),
+  bookMetadata: () => ipcRenderer.invoke('book:getMetadata'),
+  saveBookMetadata: (edits) => ipcRenderer.invoke('book:saveMetadata', edits),
   updateStatus: () => ipcRenderer.invoke('updates:status'),
   checkUpdates: (manual = false) => ipcRenderer.invoke('updates:check', manual),
   setUpdateChecks: (enabled) => ipcRenderer.invoke('updates:enabled', enabled),

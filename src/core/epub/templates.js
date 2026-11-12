@@ -2,13 +2,7 @@
 
 const { chapterLabel, chapterKicker } = require('../model');
 const { svgTitleMark, svgSceneBreak } = require('../signature');
-const {
-  PDEF_NAME,
-  PDEF_URL,
-  DEVELOPER_NAME,
-  DEVELOPER_URL,
-  DEVELOPER_TEAM,
-} = require('../credits');
+const { ATTRIBUTION_LINES } = require('../credits');
 
 /** Экранирование текста для XML. */
 function esc(s) {
@@ -276,7 +270,7 @@ img {
   color: #6b6872;
 }
 .about .url { font-size: 0.82em; word-break: break-all; }
-.about .pdef-credit {
+.about .pdef-credit, .titlepage .pdef-credit {
   max-width: 28em;
   margin: 2.8em auto 0;
   padding-top: 1em;
@@ -286,8 +280,8 @@ img {
   line-height: 1.45;
   color: #6b6872;
 }
-.about .pdef-credit p { margin: 0 0 0.3em 0; }
-.about .pdef-credit .owner { font-size: 0.94em; color: #77737d; }
+.pdef-credit p { margin: 0 0 0.3em 0; text-align: center; text-indent: 0; }
+.pdef-credit p:last-child { font-size: 0.94em; color: #77737d; }
 
 a { color: ${style.accent}; }
 .u { text-decoration: underline; }
@@ -327,6 +321,13 @@ function coverXhtml(book, coverHref, coverAlt) {
   });
 }
 
+function attributionXhtml() {
+  return ['    <div class="pdef-credit">',
+    ...ATTRIBUTION_LINES.map(line => `      <p>${runsToHtml(line)}</p>`),
+    '    </div>',
+  ].join('\n');
+}
+
 function titleXhtml(book, style, counts) {
   const mark = style.signature ? `    <div class="mark">${svgTitleMark(style.accent, style.genre)}</div>\n` : '';
   const body = [
@@ -336,6 +337,7 @@ function titleXhtml(book, style, counts) {
     `    <p class="counts">${esc(counts.chapters)}</p>`,
     `    <p class="counts">${esc(counts.words)}</p>`,
     `    <p class="by">Перевод выполнен командой <a href="${escAttr(book.teamUrl)}">${esc(book.team)}</a></p>`,
+    attributionXhtml(),
   ]
     .filter(Boolean)
     .join('\n');
@@ -348,11 +350,7 @@ function aboutXhtml(book) {
     `    <p>Перевод выполнен командой «${esc(book.team)}».</p>`,
     '    <p class="label">Официальная страница команды:</p>',
     `    <p class="url"><a href="${escAttr(book.teamUrl)}">${esc(book.teamUrl)}</a></p>`,
-    '    <div class="pdef-credit">',
-    `      <p>Документ создан с помощью <a href="${escAttr(PDEF_URL)}"><strong>${esc(PDEF_NAME)}</strong></a>.</p>`,
-    `      <p>Разработчик — <a href="${escAttr(DEVELOPER_URL)}"><strong>${esc(DEVELOPER_NAME)}</strong></a></p>`,
-    `      <p class="owner">владелец команды «${esc(DEVELOPER_TEAM)}».</p>`,
-    '    </div>',
+    attributionXhtml(),
   ].join('\n');
   return page(book, { title: `О переводе — ${book.team}`, bodyClass: 'about', body });
 }

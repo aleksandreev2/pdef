@@ -3,6 +3,7 @@ const { XMLParser, XMLValidator } = require('fast-xml-parser');
 const iconv = require('iconv-lite');
 const { makeRun, runsText, KIND } = require('../model');
 const { readFb2Glyph } = require('../fb2-glyphs');
+const { ATTRIBUTION_ID, ATTRIBUTION_TEXT } = require('../credits');
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@', preserveOrder: true, trimValues: false, parseTagValue: false, processEntities: true, ignoreDeclaration: true, ignorePiTags: true });
 const key = n => Object.keys(n).find(k => k !== ':@') || '';
 const tag = n => key(n).split(':').pop();
@@ -97,6 +98,7 @@ function parseFb2(buffer, addAsset) {
     let raw = [], hadChild = false, lastChild = null;
     for (const child of kids(n)) {
       if (tag(child) === 'section') {
+        if (attr(child, 'id') === ATTRIBUTION_ID && kids(child).filter(c => tag(c) === 'p').map(text).join('\n') === ATTRIBUTION_TEXT) continue;
         if (hadChild && lastChild) { lastChild.rawParas.push(...raw); raw = []; }
         if (raw.some(p=>p.image || p.table || (p.runs && p.style!=='Heading1'))) { sections.push({ title: label, kind, rawParas: raw }); raw = []; }
         const headingOnly = raw; raw = [];

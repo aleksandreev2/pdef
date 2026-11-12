@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('fs/promises');
 const { runsText, chapterLabel } = require('../model');
+const { ATTRIBUTION_LINES, ATTRIBUTION_TEXT } = require('../credits');
 
 function chapterText(chapter) {
   const blocks = chapter.blocks.map(block => {
@@ -17,7 +18,8 @@ function chapterText(chapter) {
 async function buildTxt({book,outPath,onProgress=()=>{}}) {
   const active=book.chapters.filter(c=>c.include && c.blocks.length);
   onProgress({phase:'txt',label:'TXT: сохранение текста'});
-  const text=[book.title,...active.map(chapterText)].join('\n\n\n')+'\n';
+  const links = ATTRIBUTION_LINES.flat().map(run => run.link).filter(Boolean).join('\n');
+  const text=[book.title,...active.map(chapterText), `${ATTRIBUTION_TEXT}\n\n${links}`].join('\n\n\n')+'\n';
   const data=Buffer.from(text.replace(/\r?\n/g,'\r\n'),'utf8');
   await fs.writeFile(outPath,data);
   return {size:data.length,chapters:active.length,images:0,warnings:[]};

@@ -4,6 +4,7 @@ const {Resvg}=require('@resvg/resvg-js');
 const {chapterLabel}=require('../model');
 const {svgTitleMark,svgSceneBreak}=require('../signature');
 const {createFb2Glyphs}=require('../fb2-glyphs');
+const {ATTRIBUTION_ID, ATTRIBUTION_LINES}=require('../credits');
 const esc=s=>String(s || '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]/g,'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
 function inline(runs, text = esc) {
   return (runs || []).map(r=>{
@@ -62,10 +63,11 @@ async function buildFb2({book,style,fonts,compatibility=false,outPath,onProgress
   const binaries=images.map(a=>`<binary id="${a.id}" content-type="${esc(a.mime)}">${a.data.toString('base64')}</binary>`).join('\n');
   const author=book.author || 'Автор не указан';
   const date=new Date().toISOString().slice(0,10);
+  const attribution = `<section id="${ATTRIBUTION_ID}"><title><p>О документе</p></title>${ATTRIBUTION_LINES.map(line => `<p>${inline(line)}</p>`).join('')}</section>`;
   const xml=`<?xml version="1.0" encoding="UTF-8"?>
 <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
 <description><title-info><genre>${GENRE[style.genre] || 'sf_fantasy'}</genre><author><nickname>${esc(author)}</nickname></author><book-title>${esc(book.title)}</book-title>${cover?'<coverpage>'+img(cover)+'</coverpage>':''}<lang>${esc(book.language || 'ru')}</lang><translator><nickname>${esc(book.team)}</nickname></translator></title-info><document-info><author><nickname>${esc(book.team)}</nickname></author><program-used>PDFMaker Mobile</program-used><date value="${date}">${date}</date><id>${crypto.randomUUID()}</id><version>1.0</version></document-info></description>
-<body>${sections}</body>
+<body>${sections}\n${attribution}</body>
 ${binaries}
 </FictionBook>`;
   const data=Buffer.from(xml,'utf8');await fs.writeFile(outPath,data);

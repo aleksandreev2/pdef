@@ -11,7 +11,7 @@ const {
   DEVELOPER_TEAM,
   ATTRIBUTION_TEXT,
 } = require('../src/core/credits');
-const { aboutXhtml, css } = require('../src/core/epub/templates');
+const { aboutXhtml, titleXhtml, css } = require('../src/core/epub/templates');
 const { clampStyle } = require('../src/core/style');
 
 test('PDeF authorship credit keeps canonical developer details', () => {
@@ -22,7 +22,7 @@ test('PDeF authorship credit keeps canonical developer details', () => {
   assert.equal(DEVELOPER_TEAM, 'Дом Некроманта');
   assert.equal(
     ATTRIBUTION_TEXT,
-    'Документ создан с помощью PDeF. Разработчик — dollar, владелец команды «Дом Некроманта».',
+    'Документ создан с помощью PDeF.\nРазработчик — dollar\nвладелец команды «Дом Некроманта».',
   );
 });
 
@@ -30,16 +30,16 @@ test('EPUB about page contains styled clickable PDeF authorship credit', () => {
   const book = {
     title: 'Тест',
     language: 'ru',
-    team: 'Дом Некроманта',
-    teamUrl: 'https://ranobelib.me/ru/team/11969--dom-nekromanta',
+    team: 'Другая команда',
+    teamUrl: 'https://example.test/translators',
   };
-  const html = aboutXhtml(book);
   const stylesheet = css(clampStyle({}));
-
-  assert.ok(html.includes('class="pdef-credit"'));
-  assert.ok(html.includes(`href="${PDEF_URL}"`));
-  assert.ok(html.includes(`href="${DEVELOPER_URL}"`));
-  assert.ok(html.includes('Документ создан с помощью'));
-  assert.ok(html.includes('владелец команды «Дом Некроманта»'));
+  for (const html of [aboutXhtml(book), titleXhtml(book, clampStyle({}), { chapters: '1 глава', words: '10 слов' })]) {
+    assert.ok(html.includes('class="pdef-credit"'));
+    assert.ok(html.includes(`href="${PDEF_URL}"`));
+    assert.ok(html.includes(`href="${DEVELOPER_URL}"`));
+    assert.ok(html.includes('Документ создан с помощью'));
+    assert.match(html, /владелец команды «<a href="https:\/\/ranobelib\.me\/ru\/team\/11969--dom-nekromanta">Дом Некроманта<\/a>»\./);
+  }
   assert.ok(stylesheet.includes('.about .pdef-credit'));
 });

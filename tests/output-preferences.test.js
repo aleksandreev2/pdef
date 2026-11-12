@@ -35,3 +35,27 @@ test('damaged preferences do not prevent choosing and remembering a new output d
     await fs.writeFile(file,JSON.stringify(value));assert.equal(await prefs.get(),null);
   }
 });
+
+test('book metadata is restored across sessions and rapid edits preserve the export folder', async t => {
+  const {createOutputPreferences} = require('../src/main/output-preferences');
+  const {dir, file} = await fixture(t);
+  await fs.mkdir(path.dirname(file));
+  await fs.writeFile(file, JSON.stringify({outDir: dir}));
+  const prefs = createOutputPreferences(file);
+  assert.deepEqual(await prefs.getMetadata(), {});
+  const nextDir = path.join(dir, 'Книги');
+  const edits = [
+    prefs.setMetadata({subtitle: 'Полное собрание'}),
+    prefs.setMetadata({team: 'Команда перевода'}),
+    prefs.set(nextDir),
+    prefs.setMetadata({teamUrl: 'https://example.test/team', title: 'Другая книга'}),
+    prefs.setMetadata({subtitle: ''}),
+  ];
+  await prefs.pendingWrite();
+  await Promise.all(edits);
+  const restarted = createOutputPreferences(file);
+  assert.equal(await restarted.get(), nextDir);
+  assert.deepEqual(await restarted.getMetadata(), {
+    subtitle: '', team: 'Команда перевода', teamUrl: 'https://example.test/team',
+  });
+});

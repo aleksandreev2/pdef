@@ -925,7 +925,27 @@ function switchTab(name) {
 
 /* ───────────────────────────── инициализация ───────────────────────────── */
 
+async function initBookMetadata() {
+  const fields = { subtitle: $('metaSubtitle'), team: $('metaTeam'), teamUrl: $('metaUrl') };
+  const edited = new Set();
+  for (const [key, input] of Object.entries(fields)) {
+    input.addEventListener('input', () => {
+      edited.add(key);
+      api.saveBookMetadata({ [key]: input.value }).catch(error => log(`Не удалось сохранить сведения о книге: ${error.message}`));
+    });
+  }
+  try {
+    const saved = await api.bookMetadata();
+    for (const [key, input] of Object.entries(fields)) {
+      if (!edited.has(key) && typeof saved[key] === 'string') input.value = saved[key];
+    }
+  } catch (error) {
+    log(`Не удалось прочитать сведения о книге: ${error.message}`);
+  }
+}
+
 async function init() {
+  await initBookMetadata();
   const defaults = await api.styleDefaults();
   initManualLayout(defaults);
   for(const [id,key] of [['styleBody','bodySize'],['styleLead','lineHeight'],['styleSide','marginLeftMm'],['styleSys','systemSize']]) {
