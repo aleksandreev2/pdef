@@ -140,6 +140,18 @@ function buildBlocks(rawParas, section) {
       headingFromText = { ...headingFromText, title: next.text };
       cleaned.splice(index, 1);
     }
+    // Сохраняем номер из имени файла у глав с ненумерованным заголовком «Эпилог» и т. п.
+    if (headingFromText && section.kind === KIND.CHAPTER && section.number !== null &&
+        headingFromText.number === null &&
+        [KIND.PROLOGUE, KIND.EPILOGUE, KIND.AFTERWORD, KIND.EXTRA].includes(headingFromText.kind)) {
+      headingFromText = {
+        kind: KIND.CHAPTER,
+        number: section.number,
+        title: !candidate.title && headingFromText.title
+          ? `${firstText.text.replace(/[\s.:·—–‒―-]+$/u, '')}. ${headingFromText.title}`
+          : firstText.text,
+      };
+    }
   }
 
   const blocks = [];

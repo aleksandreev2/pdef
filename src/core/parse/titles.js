@@ -40,7 +40,9 @@ function isGalleryLabel(text) {
 function numberedHeading(number, text) {
   const title = text.trim();
   const kind = kindFromTitle(title);
-  return kind ? { kind, number: null, title } : { kind: KIND.CHAPTER, number: Number(number), title };
+  return kind === KIND.COVER_GALLERY
+    ? { kind, number: null, title }
+    : { kind: KIND.CHAPTER, number: Number(number), title };
 }
 
 function stripExt(name) {

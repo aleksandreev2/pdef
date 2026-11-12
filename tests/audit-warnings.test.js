@@ -4,6 +4,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const os=require('node:os');
+const JSZip = require('jszip');
 const {analyze,applyEdits,build}=require('../src/core/pipeline');
 
 async function fixture(t,files) {
@@ -104,4 +105,18 @@ test('edited chapter titles and numbers update the audit, order and exported hea
   assert.match(text, /000\. Дорога[\s\S]*001\. Начало/);
   edited = applyEdits({ chapters: [{ id: second.id, number: null }] });
   assert.equal(edited.summary.chapters.find(ch => ch.id === second.id).number, null);
+});
+
+test('identically named chapters in separate archives have distinct edit identities', async t => {
+  const dir = await fixture(t, {});
+  for (const version of ['first', 'second']) {
+    const subfolder = path.join(dir, version);
+    await fs.mkdir(subfolder);
+    const archive = new JSZip();
+    archive.file('Глава 1.txt', `Глава 1. Начало\n\nТекст версии ${version}.`);
+    await fs.writeFile(path.join(subfolder, 'book.zip'), await archive.generateAsync({ type: 'nodebuffer' }));
+  }
+  const result = await analyze([dir, path.join(dir, 'first', 'book.zip')]);
+  assert.equal(result.summary.chapters.length, 2);
+  assert.equal(new Set(result.summary.chapters.map(ch => ch.sourceKey)).size, 2);
 });

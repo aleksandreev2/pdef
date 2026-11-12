@@ -315,7 +315,7 @@ function renderChapters() {
     const source = document.createElement('small');
     source.className = 'chapter-source';
     source.textContent = ch.sourceName;
-    source.title = ch.sourceName;
+    source.title = ch.sourcePath || ch.sourceName;
     title.append(input, source);
 
     const kind = document.createElement('td');

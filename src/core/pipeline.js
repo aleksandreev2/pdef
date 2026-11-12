@@ -106,6 +106,7 @@ function summarize(book) {
       title: ch.title,
       label: chapterLabel(ch),
       sourceName: ch.sourceName,
+      sourcePath: ch.sourceFile,
       include: ch.include,
       issues: ch.issues,
       encoding: ch.encoding,

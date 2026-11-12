@@ -50,6 +50,7 @@ function naturalCompare(a, b) {
 /** @returns {Promise<Array<{name:string, relPath:string, buffer:Buffer, origin:string}>>} */
 async function collectFiles(inputPaths, warnings) {
   const files = [];
+  const seen = new Set();
 
   async function walkDir(dir, origin) {
     const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -72,7 +73,7 @@ async function collectFiles(inputPaths, warnings) {
       const data = await entry.async('nodebuffer');
       files.push({
         name: path.basename(name),
-        relPath: `${path.basename(zipPath)}/${name}`,
+        relPath: `${zipPath}/${name}`,
         buffer: data,
         origin,
       });
@@ -81,12 +82,15 @@ async function collectFiles(inputPaths, warnings) {
 
   async function takeFile(full, origin) {
     const ext = extOf(full);
+    if (ext !== 'zip' && !TEXT_EXT.has(ext) && !DOC_EXT.has(ext) && !BOOK_EXT.has(ext) && !IMG_EXT.has(ext)) return;
+    full = path.resolve(full);
+    if (seen.has(full)) return;
+    seen.add(full);
     if (ext === 'zip') {
       const buffer = await fs.readFile(full);
       await expandZip(full, buffer, origin || full);
       return;
     }
-    if (!TEXT_EXT.has(ext) && !DOC_EXT.has(ext) && !BOOK_EXT.has(ext) && !IMG_EXT.has(ext)) return;
     const buffer = await fs.readFile(full);
     files.push({ name: path.basename(full), relPath: full, buffer, origin: origin || full });
   }
