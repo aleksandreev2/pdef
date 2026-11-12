@@ -116,7 +116,7 @@ app.whenReady().then(async () => {
   registerIpc(win);
   await win.loadFile(path.join(__dirname, '..', 'src', 'renderer', 'index.html'));
 
-  const ready = await waitFor(win, 'Boolean(window.__pdfmaker)', 15000, 'инициализация интерфейса');
+  const ready = await waitFor(win, `Boolean(window.__pdfmaker) && document.getElementById('styleGenre').options.length === ${GENRES.length}`, 15000, 'инициализация интерфейса');
   if (!ready) {
     console.log('ПРОБЛЕМЫ:', problems);
     app.exit(1);

@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs/promises');
+const { pathToFileURL } = require('node:url');
 const { bodyText } = require('../model');
 
 /**
@@ -12,7 +13,11 @@ const { bodyText } = require('../model');
 let pdfjsPromise = null;
 function loadPdfjs() {
   if (!pdfjsPromise) {
-    pdfjsPromise = import('pdfjs-dist/legacy/build/pdf.mjs');
+    pdfjsPromise = import('pdfjs-dist/legacy/build/pdf.mjs').then(pdfjs => {
+      // PDF.js does not apply its Node defaults inside an Electron utility process.
+      pdfjs.GlobalWorkerOptions.workerSrc ||= pathToFileURL(require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')).href;
+      return pdfjs;
+    });
   }
   return pdfjsPromise;
 }
