@@ -1,8 +1,8 @@
 'use strict';
 
-const { runsText } = require('../model');
+const { KIND, runsText } = require('../model');
 const { trimPara, cleanInline } = require('./normalize');
-const { isTitleRepeat, parseHeading } = require('./titles');
+const { isGalleryLabel, isTitleRepeat, parseHeading } = require('./titles');
 
 /**
  * Сборка блоков из «сырых параграфов» импортёра.
@@ -113,13 +113,15 @@ function buildBlocks(rawParas, section) {
   const candidate = firstText && firstText.text.length <= 200 ? parseHeading(firstText.text) : null;
   const explicit = firstText && /^(?:#\s*)?(?:(?:глава|chapter|ch\.?|гл\.?|пролог|prologue|эпилог|epilogue|послесловие|afterword|экстра|extra|бонус|bonus)(?![\p{L}])|\d{1,4}[-‑–]?(?:я|ая)\s+глава(?![\p{L}]))/iu.test(firstText.text);
   const strictHeading = firstText && (
-    /^(?:#\s*)?(?:глава|chapter|ch\.?|гл\.?)\s*\d{1,4}\s*(?:$|[.:·]|[—–―-](?:\s|$))/iu.test(firstText.text) ||
+    /^(?:#\s*)?(?:глава|chapter|ch\.?|гл\.?)\s*(?:№\s*)?\d{1,4}\s*(?:$|[.:·]|[—–―-](?:\s|$))/iu.test(firstText.text) ||
     /^(?:#\s*)?(?:пролог|prologue|эпилог|epilogue|послесловие(?:\s+автора)?|afterword|экстра|extra|бонус|bonus)\s*(?:$|[.:·]|[—–―-](?:\s|$))/iu.test(firstText.text) ||
     /^\d{1,4}[-‑–]?(?:я|ая)\s+глава\s*(?:$|[.:])/iu.test(firstText.text));
   const formattedHeading = firstText && (isHeadingStyle(firstText.style) || (firstText.runs.every(r => r.b) && firstText.align === 'center'));
   const repeat = firstText && isTitleRepeat(firstText.text, section) &&
     (!explicit || strictHeading || formattedHeading) && !/^\d+[—-][\p{L}]/u.test(firstText.text);
-  if (firstText && ((candidate && explicit && (strictHeading || formattedHeading)) || repeat)) {
+  const galleryHeading = candidate?.kind === KIND.COVER_GALLERY &&
+    (formattedHeading || isGalleryLabel(firstText.text) || isGalleryLabel(candidate.title));
+  if (firstText && ((candidate && explicit && (strictHeading || formattedHeading)) || galleryHeading || repeat)) {
     headingFromText = candidate;
     const index = cleaned.indexOf(firstText);
     cleaned.splice(index, 1);
@@ -127,7 +129,10 @@ function buildBlocks(rawParas, section) {
     // Экспорт Word часто разделяет «Глава 1» и название на два параграфа.
     // Забираем вторую строку только при явном оформлении заголовка.
     const next = cleaned[index];
-    if (headingFromText && !headingFromText.title && next && next.kind === 'text' &&
+    if (headingFromText?.number === 0 && !headingFromText.title && next?.kind === 'text' && isGalleryLabel(next.text)) {
+      headingFromText = { kind: KIND.COVER_GALLERY, number: null, title: next.text };
+      cleaned.splice(index, 1);
+    } else if (headingFromText && !headingFromText.title && next && next.kind === 'text' &&
         next.text.length <= 160 && !parseHeading(next.text) && !SEP_RE.test(next.text) &&
         !isSystemLine(next.text) && !next.list &&
         (isHeadingStyle(next.style) || (next.runs.every(r => r.b) &&

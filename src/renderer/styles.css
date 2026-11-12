@@ -315,38 +315,45 @@ table.chapters td {
   vertical-align: top;
 }
 
-table.chapters tr.off td { opacity: .4; }
+table.chapters tr.off td { background: var(--bg-raise); }
 table.chapters tr:hover td { background: rgba(255,255,255,.022); }
 table.chapters tr.dragging td { background: rgba(167,139,202,.1); }
 table.chapters tr.empty td { color: var(--text-faint); text-align: center; padding: 28px; }
 
 .col-on { width: 34px; }
-.col-num { width: 54px; }
-.col-kind { width: 104px; }
+.col-num { width: 72px; }
+.col-kind { width: 135px; }
 .col-num2 { width: 62px; text-align: right; }
 .col-issues { width: 290px; }
 
 td.col-num, td.col-num2 { font-variant-numeric: tabular-nums; color: var(--text-dim); }
 td.col-num2 { text-align: right; }
 
-td.col-title input {
+table.chapters .chapter-title,
+table.chapters .chapter-number,
+table.chapters .chapter-kind {
   margin: 0;
   padding: 3px 6px;
-  background: transparent;
-  border-color: transparent;
+  background: var(--bg-input);
+  border-color: var(--line);
+  min-height: 27px;
 }
-td.col-title input:hover { border-color: var(--line); }
-td.col-title input:focus { background: var(--bg-input); border-color: var(--accent-dim); }
-
-.kind-tag {
-  display: inline-block;
-  padding: 1px 7px;
-  border-radius: 9px;
-  font-size: 10.5px;
-  background: var(--line);
+table.chapters .chapter-title:focus,
+table.chapters .chapter-number:focus,
+table.chapters .chapter-kind:focus { border-color: var(--accent); }
+.chapter-number-group { display: flex; align-items: center; }
+.chapter-number-group .chapter-number { width: 4em; text-align: right; font-variant-numeric: tabular-nums; }
+.chapter-kind { font-size: 12px; }
+.chapter-source {
+  display: block;
+  max-width: 0;
+  min-width: 100%;
+  padding: 2px 6px 0;
   color: var(--text-dim);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
-.kind-tag.special { background: rgba(167,139,202,.16); color: var(--accent); }
 
 .issue { display: block; font-size: 11px; color: var(--warn); }
 .issue.bad { color: var(--bad); }

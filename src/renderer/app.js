@@ -26,7 +26,10 @@ const state = {
   report: null,
   busy: false,
   order: [],
+  sortByNumber: false,
 };
+const chapterEdits = new Map();
+let editRevision = 0;
 
 const KIND_LABEL = {
   chapter: 'Глава',
@@ -99,6 +102,8 @@ function setStatus(text) {
 
 function setBusy(busy, label) {
   state.busy = busy;
+  $('chapterBody').inert = busy;
+  $('chapterTools').inert = busy;
   $('buildBtn').disabled = busy || !state.chapters.some((c) => c.include) || !hasFormat();
   OUTPUT_FORMATS.forEach(key=>{formatInput(key).disabled=busy;});
   ['illustrationVersion','illustrationCompression','illustrationKeepCover'].forEach(id=>{$(id).disabled=busy;});
@@ -113,6 +118,7 @@ function setBusy(busy, label) {
 /* ───────────────────────────── источники ───────────────────────────── */
 
 async function addSources(paths) {
+  if (state.busy) return;
   const fresh = paths.filter((p) => p && !state.sources.includes(p));
   if (!fresh.length) return;
   state.sources.push(...fresh);
@@ -133,18 +139,28 @@ function renderSourceList() {
 }
 
 async function runAnalysis() {
+  clearTimeout(editTimer);
+  editRevision += 1;
+  const previousIds = new Map(state.chapters.map(ch => [ch.id, ch.sourceKey]));
+  const previousOrder = state.order.map(id => previousIds.get(id));
   setBusy(true, 'Разбор исходников…');
   log(`Разбор: ${state.sources.length} ${plural(state.sources.length, 'источник', 'источника', 'источников')}`);
   try {
-    const result = await api.analyze(state.sources);
-    if (result.suggestedTitle && !$('metaTitle').value.trim()) $('metaTitle').value = result.suggestedTitle;
+    const imported = await api.analyze(state.sources);
+    const newIds = new Map(imported.summary.chapters.map(ch => [ch.sourceKey, ch.id]));
+    state.order = previousOrder.map(key => newIds.get(key)).filter(Boolean);
+    const patches = imported.summary.chapters.filter(ch => chapterEdits.has(ch.sourceKey))
+      .map(ch => ({ id: ch.id, ...chapterEdits.get(ch.sourceKey) }));
+    const result = patches.length || state.order.length || state.sortByNumber
+      ? await api.applyEdits({ chapters: patches, order: state.order, sortByNumber: state.sortByNumber })
+      : imported;
+    if (imported.suggestedTitle && !$('metaTitle').value.trim()) $('metaTitle').value = imported.suggestedTitle;
     state.chapters = result.summary.chapters;
-    state.order = state.chapters.map((c) => c.id);
     state.audit = result.audit;
     state.sourceWarnings = result.sourceWarnings || [];
     state.stats = result.stats;
-    state.coverCandidates = result.coverCandidates;
-    state.cover = result.cover ? result.cover.assetId : null;
+    state.coverCandidates = imported.coverCandidates;
+    state.cover = imported.cover ? imported.cover.assetId : null;
 
     renderChapters();
     renderAudit();
@@ -163,9 +179,9 @@ async function runAnalysis() {
         (a.duplicates.length ? ` · дублей: ${a.duplicates.length}` : ''),
     );
     log(`Разобрано: ${a.total}, в книгу входит ${a.included}, слов ${fmt(result.stats.words)}`);
-    for (const w of result.warnings) log(`! ${w}`);
+    for (const w of imported.warnings) log(`! ${w}`);
     for (const w of state.sourceWarnings) log(`! ${w}`);
-    for (const w of result.fonts) log(`! ${w}`);
+    for (const w of imported.fonts) log(`! ${w}`);
   } catch (e) {
     log(`ОШИБКА разбора: ${e.message}`);
     setStatus(`Ошибка: ${e.message}`);
@@ -196,10 +212,40 @@ function issueClass(text) {
   return 'issue info';
 }
 
+function rememberChapterEdit(chapter, patch) {
+  Object.assign(chapter, patch);
+  chapterEdits.set(chapter.sourceKey, { ...chapterEdits.get(chapter.sourceKey), ...patch });
+}
+
+function chapterTextField(field, chapter, label, value, save) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = `chapter-${field}`;
+  input.dataset.field = field;
+  input.value = value;
+  input.setAttribute('aria-label', `${label} — ${chapter.sourceName}`);
+  input.addEventListener('change', () => save(input));
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') input.blur();
+    if (event.key === 'Escape') {
+      input.value = field === 'number' ? chapter.number ?? '' : chapter.title;
+      input.blur();
+    }
+  });
+  return input;
+}
+
 function renderChapters() {
   const tbody = $('chapterBody');
+  const focus = document.activeElement;
+  const focusRow = focus.closest?.('#chapterBody tr[data-id]');
+  const focusField = focusRow && focus.dataset.field;
+  const selection = focusField && focus.type === 'text' ? [focus.selectionStart, focus.selectionEnd] : null;
+  const draftValue = focus.value;
   tbody.innerHTML = '';
   const rows = visibleChapters();
+  const fragment = document.createDocumentFragment();
+  let nextFocus;
 
   $('tabChaptersCount').textContent = String(state.chapters.filter((c) => c.include).length);
 
@@ -214,18 +260,19 @@ function renderChapters() {
   for (const ch of rows) {
     const tr = document.createElement('tr');
     tr.dataset.id = ch.id;
-    tr.draggable = true;
     if (!ch.include) tr.classList.add('off');
 
     const on = document.createElement('td');
     on.className = 'col-on';
     const cb = document.createElement('input');
     cb.type = 'checkbox';
+    cb.dataset.field = 'include';
     cb.checked = ch.include;
     cb.disabled = !ch.blocks;
-    cb.title = 'Включить раздел в книгу';
+    cb.title = ch.blocks ? 'Включить раздел в книгу' : 'В разделе нет содержимого для экспорта';
+    cb.setAttribute('aria-label', `Включить раздел — ${ch.sourceName}`);
     cb.addEventListener('change', () => {
-      ch.include = cb.checked;
+      rememberChapterEdit(ch, { include: cb.checked });
       tr.classList.toggle('off', !cb.checked);
       pushEdits();
     });
@@ -233,27 +280,61 @@ function renderChapters() {
 
     const num = document.createElement('td');
     num.className = 'col-num';
-    num.innerHTML = `<span class="drag-handle">⠿</span>${ch.number === null ? '—' : String(ch.number).padStart(3, '0')}`;
+    const handle = document.createElement('span');
+    handle.className = 'drag-handle';
+    handle.draggable = true;
+    handle.title = 'Перетащить раздел';
+    handle.textContent = '⠿';
+    const number = chapterTextField('number', ch, 'Номер главы', ch.number === null ? '' : String(ch.number), field => {
+      const value = field.value.trim();
+      if (value && !/^\d{1,4}$/.test(value)) {
+        field.value = ch.number ?? '';
+        setStatus('Введите целый номер от 0 до 9999');
+        return;
+      }
+      rememberChapterEdit(ch, { number: value ? Number(value) : null });
+      pushEdits();
+    });
+    number.inputMode = 'numeric';
+    number.maxLength = 4;
+    number.placeholder = '—';
+    number.disabled = ch.kind !== 'chapter' || !ch.blocks;
+    const numberGroup = document.createElement('div');
+    numberGroup.className = 'chapter-number-group';
+    numberGroup.append(handle, number);
+    num.appendChild(numberGroup);
 
     const title = document.createElement('td');
     title.className = 'col-title';
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.value = ch.title || '';
-    input.placeholder = ch.sourceName;
-    input.title = ch.sourceName;
-    input.addEventListener('change', () => {
-      ch.title = input.value;
+    const input = chapterTextField('title', ch, 'Название главы', ch.title, field => {
+      rememberChapterEdit(ch, { title: field.value.trim() });
       pushEdits();
     });
-    title.appendChild(input);
+    input.placeholder = 'Без названия';
+    input.disabled = !ch.blocks;
+    const source = document.createElement('small');
+    source.className = 'chapter-source';
+    source.textContent = ch.sourceName;
+    source.title = ch.sourceName;
+    title.append(input, source);
 
     const kind = document.createElement('td');
     kind.className = 'col-kind';
-    const tag = document.createElement('span');
-    tag.className = `kind-tag${ch.kind === 'chapter' ? '' : ' special'}`;
-    tag.textContent = KIND_LABEL[ch.kind] || ch.kind;
-    kind.appendChild(tag);
+    const type = document.createElement('select');
+    type.className = 'chapter-kind';
+    type.dataset.field = 'kind';
+    type.setAttribute('aria-label', `Тип раздела — ${ch.sourceName}`);
+    for (const [value, label] of Object.entries(KIND_LABEL)) type.add(new Option(label, value));
+    type.value = ch.kind;
+    type.disabled = !ch.blocks;
+    type.addEventListener('change', () => {
+      const value = type.value;
+      rememberChapterEdit(ch, value === 'chapter' ? { kind: value } : { kind: value, number: null });
+      number.disabled = value !== 'chapter';
+      number.value = ch.number ?? '';
+      pushEdits();
+    });
+    kind.appendChild(type);
 
     const words = document.createElement('td');
     words.className = 'col-num2';
@@ -277,10 +358,17 @@ function renderChapters() {
     }
 
     tr.append(on, num, title, kind, words, imgs, blocks, issues);
-    tbody.appendChild(tr);
+    if (focusField && focusRow.dataset.id === ch.id) nextFocus = tr.querySelector(`[data-field="${focusField}"]`);
+    fragment.appendChild(tr);
   }
-
-  attachDragReorder(tbody);
+  tbody.appendChild(fragment);
+  if (nextFocus && !nextFocus.disabled) {
+    nextFocus.focus({ preventScroll: true });
+    if (selection) {
+      nextFocus.value = draftValue;
+      nextFocus.setSelectionRange(...selection);
+    }
+  }
 }
 
 /** Перетаскивание строк меняет порядок чтения. */
@@ -288,6 +376,7 @@ function attachDragReorder(tbody) {
   let dragId = null;
 
   tbody.addEventListener('dragstart', (e) => {
+    if (!e.target.closest('.drag-handle')) return;
     const tr = e.target.closest('tr[data-id]');
     if (!tr) return;
     dragId = tr.dataset.id;
@@ -327,6 +416,7 @@ function attachDragReorder(tbody) {
 
 let editTimer = null;
 function pushEdits() {
+  editRevision += 1;
   clearTimeout(editTimer);
   editTimer = setTimeout(() => {
     syncEdits().catch(e => log(`ОШИБКА применения правок: ${e.message}`));
@@ -336,6 +426,7 @@ function pushEdits() {
 async function syncEdits() {
   clearTimeout(editTimer);
   editTimer = null;
+  const revision = editRevision;
   const result = await api.applyEdits({
     chapters: state.chapters.map((c) => ({
       id: c.id,
@@ -345,18 +436,15 @@ async function syncEdits() {
       kind: c.kind,
     })),
     order: state.order,
+    sortByNumber: state.sortByNumber,
     cover: state.cover,
   });
+  if (revision !== editRevision) return;
+  state.chapters = result.summary.chapters;
   state.stats = result.stats;
   state.audit = result.audit;
   state.sourceWarnings = result.sourceWarnings || [];
-  // Пересчитанные показатели глав возвращаются из ядра.
-  const byId = new Map(result.summary.chapters.map((c) => [c.id, c]));
-  for (const ch of state.chapters) {
-    const fresh = byId.get(ch.id);
-    if (fresh) Object.assign(ch, { words: fresh.words, images: fresh.images, systemBlocks: fresh.systemBlocks, issues: fresh.issues });
-  }
-  $('tabChaptersCount').textContent = String(state.chapters.filter((c) => c.include).length);
+  renderChapters();
   $('buildBtn').disabled = state.busy || !state.chapters.some((c) => c.include) || !hasFormat();
   updateOutNameHint();
   renderAudit();
@@ -416,9 +504,9 @@ function renderAudit() {
       `<h3>Дубли и версии (${a.duplicates.length})</h3><ul class="note-list">${a.duplicates
         .map(
           (d) =>
-            `<li><b>${d.label}</b> — ${d.identical ? 'точный дубль' : 'разные версии'}; оставлен «${d.kept}», исключено: ${d.dropped
-              .map((x) => `${x.file} (${fmt(x.words)} слов)`)
-              .join(', ')}</li>`,
+            `<li><b>${escapeHtml(d.label)}</b> — ${d.identical ? 'точный дубль' : 'разные версии'}<ul>${d.versions
+              .map((x) => `<li>${escapeHtml(x.file)} · ${fmt(x.words)} слов · ${x.include ? 'в книге' : 'исключён'}</li>`)
+              .join('')}</ul></li>`,
         )
         .join('')}</ul>`,
     );
@@ -426,21 +514,21 @@ function renderAudit() {
   if (a.empty.length) {
     problems.push(
       `<h3>Пустые файлы (${a.empty.length})</h3><ul class="note-list">${a.empty
-        .map((e) => `<li>${e.file}</li>`)
+        .map((e) => `<li>${escapeHtml(e.file)}</li>`)
         .join('')}</ul>`,
     );
   }
   if (a.broken.length) {
     problems.push(
       `<h3>Не разобраны (${a.broken.length})</h3><ul class="note-list">${a.broken
-        .map((e) => `<li>${e.file} — ${e.reason}</li>`)
+        .map((e) => `<li>${escapeHtml(e.file)} — ${escapeHtml(e.reason)}</li>`)
         .join('')}</ul>`,
     );
   }
   if (a.shortSuspects.length) {
     problems.push(
       `<h3>Подозрительно короткие (${a.shortSuspects.length})</h3><ul class="note-list">${a.shortSuspects
-        .map((e) => `<li>${e.label} — ${fmt(e.words)} слов при медиане ${fmt(e.median)}</li>`)
+        .map((e) => `<li>${escapeHtml(e.label)} — ${fmt(e.words)} слов при медиане ${fmt(e.median)}</li>`)
         .join('')}</ul>`,
     );
   }
@@ -864,6 +952,10 @@ async function init() {
   $('pickFolderBtn').addEventListener('click', async () => addSources(await api.pickFolder()));
   $('clearBtn').addEventListener('click', () => {
     clearTimeout(editTimer);
+    editRevision += 1;
+    chapterEdits.clear();
+    state.order = [];
+    state.sortByNumber = false;
     state.sources = [];
     state.chapters = [];
     state.audit = null;
@@ -910,6 +1002,7 @@ async function init() {
   $('showSourceAudit').addEventListener('click', () => switchTab('audit'));
   $('chapterFilter').addEventListener('input', renderChapters);
   $('onlyProblems').addEventListener('change', renderChapters);
+  attachDragReorder($('chapterBody'));
   $('metaTitle').addEventListener('input', updateOutNameHint);
   OUTPUT_FORMATS.forEach(key=>formatInput(key).addEventListener('change',()=>{
     updateOutNameHint();
@@ -920,34 +1013,23 @@ async function init() {
   $('previewVersion').addEventListener('change',showPreview);
 
   $('includeAllBtn').addEventListener('click', () => {
-    for (const ch of state.chapters) if (ch.blocks > 0) ch.include = true;
+    for (const ch of state.chapters) if (ch.blocks) rememberChapterEdit(ch, { include: true });
     renderChapters();
     pushEdits();
   });
 
   $('excludeAllBtn').addEventListener('click', () => {
     if (!state.chapters.length) return;
-    for (const ch of state.chapters) ch.include = false;
+    for (const ch of state.chapters) if (ch.blocks) rememberChapterEdit(ch, { include: false });
     renderChapters();
     $('buildBtn').disabled = true;
     pushEdits();
   });
 
-  $('resortBtn').addEventListener('click', async () => {
+  $('resortBtn').addEventListener('click', () => {
     state.order = [];
-    const result = await api.applyEdits({
-      chapters: state.chapters.map((c) => ({ id: c.id, include: c.include, title: c.title })),
-      order: [],
-      cover: state.cover,
-    });
-    state.chapters = result.summary.chapters;
-    state.order = state.chapters.map((c) => c.id);
-    state.stats = result.stats;
-    state.audit = result.audit;
-    state.sourceWarnings = result.sourceWarnings || [];
-    renderChapters();
-    renderAudit();
-    renderSourceWarnings();
+    state.sortByNumber = true;
+    pushEdits();
   });
 
   $('previewRefresh').addEventListener('click', showPreview);

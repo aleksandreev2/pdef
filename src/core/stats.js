@@ -9,10 +9,34 @@ const { blockText, chapterLabel, KIND } = require('./model');
  */
 
 const WORD_RE = /[\p{L}\p{N}][\p{L}\p{N}''’́\-]*/gu;
+const statsByBlocks = new WeakMap();
 
 function countWords(text) {
   const m = text.match(WORD_RE);
   return m ? m.length : 0;
+}
+
+function contentStats(blocks) {
+  let stats = statsByBlocks.get(blocks);
+  if (stats) return stats;
+  stats = { words: 0, wordsWithHeadings: 0, charsWithSpaces: 0, charsNoSpaces: 0, images: 0, systemBlocks: 0 };
+  for (const block of blocks) {
+    if (block.type === 'image') {
+      stats.images += 1;
+      continue;
+    }
+    if (block.type === 'sep') continue;
+    const text = blockText(block);
+    const words = countWords(text);
+    stats.wordsWithHeadings += words;
+    if (block.type === 'heading') continue;
+    if (block.type === 'system') stats.systemBlocks += 1;
+    stats.words += words;
+    stats.charsWithSpaces += text.length;
+    stats.charsNoSpaces += text.replace(/\s/gu, '').length;
+  }
+  statsByBlocks.set(blocks, stats);
+  return stats;
 }
 
 function computeStats(chapters) {
@@ -24,61 +48,27 @@ function computeStats(chapters) {
   let systemBlocks = 0;
   let chapterCount = 0;
 
-  const active = chapters.filter((c) => c.include);
+  let sections = 0;
+  let countedSections = 0;
+  for (const ch of chapters) {
+    const stats = contentStats(ch.blocks);
+    Object.assign(ch, stats);
+    ch.wordsWithHeadings += countWords(chapterLabel(ch));
+    if (!ch.include) continue;
 
-  for (const ch of active) {
-    let chWords = 0;
-    let chWithHeadings = 0;
-    let chCharsWith = 0;
-    let chCharsNo = 0;
-    let chImages = 0;
-    let chSystem = 0;
-
-    // Заголовок раздела (opener) идёт только в «слова с заголовками».
-    const headingText = chapterLabel(ch);
-    chWithHeadings += countWords(headingText);
-
-    for (const b of ch.blocks) {
-      if (b.type === 'image') {
-        chImages += 1;
-        continue;
-      }
-      if (b.type === 'sep') continue;
-
-      const text = blockText(b);
-      if (b.type === 'system') chSystem += 1;
-
-      const w = countWords(text);
-      if (b.type === 'heading') {
-        chWithHeadings += w;
-      } else {
-        chWords += w;
-        chWithHeadings += w;
-        chCharsWith += text.length;
-        chCharsNo += text.replace(/\s/gu, '').length;
-      }
-    }
-
-    ch.words = chWords;
-    ch.wordsWithHeadings = chWithHeadings;
-    ch.charsWithSpaces = chCharsWith;
-    ch.charsNoSpaces = chCharsNo;
-    ch.images = chImages;
-    ch.systemBlocks = chSystem;
-
-    words += chWords;
-    wordsWithHeadings += chWithHeadings;
-    charsWithSpaces += chCharsWith;
-    charsNoSpaces += chCharsNo;
-    images += chImages;
-    systemBlocks += chSystem;
+    sections += 1;
+    if (stats.words > 0) countedSections += 1;
+    words += stats.words;
+    wordsWithHeadings += ch.wordsWithHeadings;
+    charsWithSpaces += stats.charsWithSpaces;
+    charsNoSpaces += stats.charsNoSpaces;
+    images += stats.images;
+    systemBlocks += stats.systemBlocks;
     if (ch.kind === KIND.CHAPTER) chapterCount += 1;
   }
 
-  const countedSections = active.filter((c) => c.words > 0).length || 1;
-
   return {
-    sections: active.length,
+    sections,
     chapters: chapterCount,
     words,
     wordsWithHeadings,
@@ -86,8 +76,8 @@ function computeStats(chapters) {
     charsNoSpaces,
     images,
     systemBlocks,
-    avgWordsPerChapter: Math.round(words / countedSections),
+    avgWordsPerChapter: Math.round(words / (countedSections || 1)),
   };
 }
 
-module.exports = { computeStats, countWords };
+module.exports = { computeStats, countWords, contentStats };

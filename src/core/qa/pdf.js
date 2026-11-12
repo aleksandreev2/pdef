@@ -26,7 +26,8 @@ function check(name, ok, detail) {
  */
 async function checkPdf(pdfPath, { book, expected }) {
   const pdfjs = await loadPdfjs();
-  const data = new Uint8Array(await fs.readFile(pdfPath));
+  const file = await fs.readFile(pdfPath);
+  const data = new Uint8Array(file.buffer, file.byteOffset, file.byteLength);
   const checks = [];
   const notes = [];
 

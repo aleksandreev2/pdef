@@ -66,13 +66,16 @@ async function analyze(paths, onProgress = () => {}) {
   book.stats = stats;
 
   // Кандидаты на обложку: отдельные картинки рядом + первая иллюстрация галереи.
-  const gallery = chapters.find((c) => c.kind === KIND.COVER_GALLERY);
-  const galleryFirst = gallery ? gallery.blocks.find((b) => b.type === 'image') : null;
+  const galleries = chapters.filter(c => c.kind === KIND.COVER_GALLERY)
+    .flatMap(c => {
+      const first = c.blocks.find(b => b.type === 'image');
+      return first ? [{ assetId: first.assetId, name: 'первая иллюстрация галереи', source: c.sourceName }] : [];
+    });
   const coverCandidates = [
     ...loose.map((l) => ({ assetId: l.assetId, name: l.name, source: 'файл рядом с главами' })),
-    ...(galleryFirst ? [{ assetId: galleryFirst.assetId, name: 'первая иллюстрация галереи', source: gallery.sourceName }] : []),
+    ...galleries,
   ];
-  if (galleryFirst) book.cover = { assetId: galleryFirst.assetId };
+  if (galleries.length) book.cover = { assetId: galleries[0].assetId };
   else if (loose.length) book.cover = { assetId: loose[0].assetId };
 
   session.book = book;
@@ -97,6 +100,7 @@ function summarize(book) {
   return {
     chapters: book.chapters.map((ch) => ({
       id: ch.id,
+      sourceKey: JSON.stringify([ch.sourceFile, ch.sourceOrder ?? null]),
       kind: ch.kind,
       number: ch.number,
       title: ch.title,
@@ -114,7 +118,7 @@ function summarize(book) {
   };
 }
 
-/** Применение правок из интерфейса: порядок, включение, названия. */
+/** Применение правок из интерфейса: порядок, включение, номера и названия. */
 function applyEdits(edits = {}) {
   if (!session.book) throw new Error('Сначала выполните разбор исходников');
   const book = session.book;
@@ -125,15 +129,21 @@ function applyEdits(edits = {}) {
       const ch = byId.get(patch.id);
       if (!ch) continue;
       if (typeof patch.include === 'boolean') ch.include = patch.include && ch.blocks.length > 0;
-      if (typeof patch.title === 'string') ch.title = patch.title;
-      if (patch.number === null || Number.isFinite(patch.number)) ch.number = patch.number;
-      if (typeof patch.kind === 'string') ch.kind = patch.kind;
+      if (typeof patch.title === 'string') ch.title = patch.title.trim();
+      if (Object.values(KIND).includes(patch.kind) && patch.kind !== ch.kind) {
+        ch.kind = patch.kind;
+        if (ch.kind !== KIND.CHAPTER) ch.number = null;
+      }
+      if (ch.kind === KIND.CHAPTER && (patch.number === null ||
+          (Number.isInteger(patch.number) && patch.number >= 0 && patch.number <= 9999))) {
+        ch.number = patch.number;
+      }
     }
     if (Array.isArray(edits.order) && edits.order.length) {
       const pos = new Map(edits.order.map((id, i) => [id, i]));
       book.chapters.sort((a, b) => (pos.get(a.id) ?? 1e9) - (pos.get(b.id) ?? 1e9));
     } else {
-      sortChapters(book.chapters);
+      sortChapters(book.chapters, { preserveEbookOrder: edits.sortByNumber !== true });
     }
   }
 

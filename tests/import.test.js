@@ -7,6 +7,7 @@ const path = require('node:path');
 const JSZip = require('jszip');
 const { importSources } = require('../src/core/import');
 const { buildBlocks } = require('../src/core/parse/blocks');
+const { fromFilename } = require('../src/core/parse/titles');
 
 const para = (text, extra = {}) => ({ runs: [{ text }], ...extra });
 async function importDoc(t, filename, paragraphs) {
@@ -18,7 +19,16 @@ async function importDoc(t, filename, paragraphs) {
   });
   const doc = new JSZip();
   const escape = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
-  doc.file('word/document.xml', `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${paragraphs.map(p => `<w:p><w:pPr>${p.align ? `<w:jc w:val="${p.align}"/>` : ''}</w:pPr><w:r>${p.bold ? '<w:rPr><w:b/></w:rPr>' : ''}<w:t>${escape(p.text)}</w:t></w:r></w:p>`).join('')}</w:body></w:document>`);
+  const picture = '<w:p><w:r><w:drawing><wp:inline><a:blip r:embed="rId1"/></wp:inline></w:drawing></w:r></w:p>';
+  const body = paragraphs.map(p => p.image ? picture : `<w:p><w:pPr>${p.align ? `<w:jc w:val="${p.align}"/>` : ''}</w:pPr><w:r>${p.bold ? '<w:rPr><w:b/></w:rPr>' : ''}<w:t>${escape(p.text)}</w:t></w:r></w:p>`).join('');
+  doc.file('word/document.xml', `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+      xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+      xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+      xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><w:body>${body}</w:body></w:document>`);
+  if (paragraphs.some(p => p.image)) {
+    doc.file('word/_rels/document.xml.rels', '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Target="media/image.png" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"/></Relationships>');
+    doc.file('word/media/image.png', 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=', { base64: true });
+  }
   const zip = new JSZip();
   zip.file(`WORKING/${filename}`, await doc.generateAsync({ type: 'nodebuffer' }));
   const file = path.join(dir, 'WORKING.zip');
@@ -96,4 +106,34 @@ test('ordinal chapter label without punctuation recognizes a split title', async
   assert.equal(ch.number, 48);
   assert.equal(ch.title, 'Начало');
   assert.equal(ch.blocks[0].runs[0].text, 'Текст.');
+});
+
+test('DOCX recognizes chapter zero galleries with a number sign, bare number or split heading', async t => {
+  for (const heading of [
+    ['Глава 0. Иллюстрация.'],
+    ['Глава № 0. Иллюстрация.'],
+    ['000. Иллюстрации'],
+    ['Глава 0.', 'Иллюстрация.'],
+  ]) {
+    const chapter = await importDoc(t, 'export.docx', [...heading, 'Подпись к рисунку.'].map(text => ({ text })));
+    assert.equal(chapter.kind, 'illustrations', heading.join(' / '));
+    assert.equal(chapter.number, null);
+    assert.equal(chapter.blocks[0].runs[0].text, 'Подпись к рисунку.');
+  }
+  assert.equal(fromFilename('Глава_0._Иллюстрация.docx').kind, 'illustrations');
+});
+
+test('chapter zero with regular prose remains a numbered chapter', async t => {
+  const chapter = await importDoc(t, 'export.docx', [{ text: 'Глава 0. Встреча' }, { text: 'Начало истории.' }]);
+  assert.equal(chapter.kind, 'chapter');
+  assert.equal(chapter.number, 0);
+  assert.equal(chapter.blocks[0].runs[0].text, 'Начало истории.');
+});
+
+test('DOCX imports an image-only chapter zero as an enabled illustration gallery', async t => {
+  const chapter = await importDoc(t, 'export.docx', [{ text: 'Глава 0.' }, { image: true }]);
+  assert.equal(chapter.kind, 'illustrations');
+  assert.equal(chapter.number, null);
+  assert.equal(chapter.include, true);
+  assert.deepEqual(chapter.blocks.map(block => block.type), ['image']);
 });

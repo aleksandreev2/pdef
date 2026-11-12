@@ -157,19 +157,22 @@ async function importSources(inputPaths, opts = {}) {
       if (section.number !== null && headingFromText.number !== null && section.number !== headingFromText.number) {
         issues.push(`Номер в имени файла (${section.number}) отличается от заголовка (${headingFromText.number}); выбран номер из документа`);
       }
-      if (headingFromText.title || section.number === null) section.title = headingFromText.title;
-      section.number = headingFromText.number;
-      if (!section.fixedKind) section.kind = headingFromText.kind;
+      const genericGalleryHeading = section.kind === KIND.COVER_GALLERY &&
+        headingFromText.number === 0 && !headingFromText.title;
+      if (!genericGalleryHeading) {
+        if (headingFromText.title || section.number === null) section.title = headingFromText.title;
+        section.number = headingFromText.number;
+        if (!section.fixedKind) section.kind = headingFromText.kind;
+      }
     }
     if (sourceOrder !== undefined && !blocks.length) return;
-    const hasText = blocks.some(b => b.type === 'para' || b.type === 'system' || b.type === 'list' || b.type === 'heading');
-    const imageCount = blocks.filter(b => b.type === 'image').length;
-    let kind = section.kind;
-    if (!hasText && imageCount > 0 && kind === KIND.CHAPTER && section.number === null) kind = KIND.COVER_GALLERY;
+    const imageOnlyGallery = section.kind === KIND.CHAPTER && (section.number === null || section.number === 0) &&
+      blocks.some(b => b.type === 'image') && blocks.every(b => b.type === 'image' || b.type === 'sep');
+    const kind = imageOnlyGallery ? KIND.COVER_GALLERY : section.kind;
     if (!blocks.length) issues.push('Файл пустой — нет ни текста, ни иллюстраций');
     chapters.push(makeChapter({ id: `ch${chapters.length + 1}`, sourceFile: file.relPath,
       sourceName: sourceOrder === undefined ? file.name : `${file.name} — ${String(sourceOrder+1).padStart(4,'0')}. ${section.title || 'Раздел'}`,
-      kind, number: section.number, title: section.title, blocks, include: blocks.length > 0, issues, encoding,
+      kind, number: imageOnlyGallery ? null : section.number, title: section.title, blocks, include: blocks.length > 0, issues, encoding,
       ...(sourceOrder === undefined ? {} : { sourceGroup: file.relPath, sourceOrder }),
     }));
   }
@@ -254,11 +257,11 @@ async function importSources(inputPaths, opts = {}) {
 }
 
 /** Порядок чтения: тип раздела → номер → имя файла. */
-function sortChapters(chapters) {
+function sortChapters(chapters, { preserveEbookOrder = true } = {}) {
   // A complete ebook is one sorting unit; its native section order is retained.
   const groups = new Map(), units = [];
   for (const ch of chapters) {
-    if (ch.sourceGroup) {
+    if (preserveEbookOrder && ch.sourceGroup) {
       if (!groups.has(ch.sourceGroup)) { const unit=[]; groups.set(ch.sourceGroup,unit); units.push(unit); }
       groups.get(ch.sourceGroup).push(ch);
     } else units.push([ch]);

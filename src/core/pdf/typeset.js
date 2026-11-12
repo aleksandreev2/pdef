@@ -5,6 +5,8 @@ const { splitToFit } = require('./hyphenate');
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 const ignorable = /\p{Default_Ignorable_Code_Point}/u;
 const emojiPresentation = /\p{Emoji_Presentation}|\uFE0F/u;
+// These Latin/Cyrillic letters and punctuation have no combining marks.
+const simpleText = /^[\x20-\x7E\u00A0\u00AB\u00BB\u0400-\u0482\u048A-\u052F\u2010-\u2015\u2026]*$/u;
 
 /** Во сколько раз пробел может растянуться, прежде чем строка уйдёт влево. */
 const MAX_SPACE_STRETCH = 2.35;
@@ -64,6 +66,14 @@ function createMeasurer(doc, fonts) {
       if (last && last.fontKey === key) last.text += value;
       else out.push({ text: value, fontKey: key });
     };
+    if (simpleText.test(text)) {
+      for (const char of text) {
+        const key = supports(fontKey, char) ? fontKey : fallbackKeys.find(fallback => supports(fallback, char));
+        if (!key) onMissing?.(char.codePointAt(0));
+        append(char, key || fontKey);
+      }
+      return out;
+    }
     for (const { segment } of graphemes.segment(text)) {
       const chars = [...segment].filter(char => !ignorable.test(char));
       const key = chars.length

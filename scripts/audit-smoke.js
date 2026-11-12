@@ -102,6 +102,28 @@ app.whenReady().then(async()=>{
   await wait('!window.__pdfmaker.state.busy && window.__pdfmaker.state.report.stats.chapters===4');
   assert.equal(await js('document.getElementById("buildWarningsDialog").open'),false);
   console.log('OK: repaired files clear warnings, immediate build uses current selection, clean book needs no confirmation.');
+  await js(`window.__pdfmaker.switchTab('chapters');
+    const chapterId=window.__pdfmaker.state.chapters.find(c=>c.number===2).id;
+    const editedRow=document.querySelector('#chapterBody tr[data-id="'+chapterId+'"]');
+    const title=editedRow.querySelector('.chapter-title');
+    title.value='Новое название';title.dispatchEvent(new Event('change',{bubbles:true}));
+    const number=editedRow.querySelector('.chapter-number');
+    number.value='0';number.dispatchEvent(new Event('change',{bubbles:true}));`);
+  await wait('window.__pdfmaker.state.chapters[0].number===0 && window.__pdfmaker.state.chapters[0].title==="Новое название"');
+  await js(`const editedGallery=document.querySelector('#chapterBody tr');
+    const kind=editedGallery.querySelector('.chapter-kind');
+    kind.value='illustrations';kind.dispatchEvent(new Event('change',{bubbles:true}));
+    editedGallery.querySelector('input[type=checkbox]').click();`);
+  const extra = path.join(dir, '005.txt');
+  await fs.writeFile(extra, 'Глава 5. Новая\n\nТекст добавленной главы.');
+  await js(`window.__pdfmaker.addSources([${JSON.stringify(extra)}])`);
+  const edited = await js('window.__pdfmaker.state.chapters.find(c=>c.sourceName==="002.txt")');
+  assert.equal(edited.title, 'Новое название');
+  assert.equal(edited.kind, 'illustrations');
+  assert.equal(edited.number, null);
+  assert.equal(edited.include, false);
+  await shot('3-chapter-editor');
+  console.log('OK: editable title and number, chapter type and selection survive adding another source.');
   assert.deepEqual(errors,[],'renderer errors');
 }).then(()=>finish(0)).catch(e=>{console.error(e);finish(1);});
 async function finish(code) {

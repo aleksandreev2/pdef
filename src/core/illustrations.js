@@ -53,10 +53,10 @@ async function prepareIllustrations(source, options, onProgress = () => {}) {
     ...source,
     cover: source.cover && (!without || options.keepCover) ? { ...source.cover } : null,
     chapters: source.chapters.map(ch => {
-      const blocks = without ? ch.blocks.filter(b => b.type !== 'image') : [...ch.blocks];
-      const removedImages = without && blocks.length !== ch.blocks.length;
+      if (!without || !ch.blocks.some(b => b.type === 'image')) return { ...ch };
+      const blocks = ch.blocks.filter(b => b.type !== 'image');
       const hasContent = blocks.some(b => b.type !== 'sep' && blockText(b).trim());
-      return { ...ch, blocks, include: ch.include && !(removedImages && !hasContent) };
+      return { ...ch, blocks, include: ch.include && hasContent };
     }),
     assets: new Map(),
   };

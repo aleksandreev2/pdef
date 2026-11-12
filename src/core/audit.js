@@ -1,18 +1,11 @@
 'use strict';
 
 const crypto = require('crypto');
-const { KIND, blockText, chapterLabel } = require('./model');
+const { KIND, chapterLabel } = require('./model');
+const { contentStats } = require('./stats');
 
-/**
- * Быстрый аудит исходников (п.1 спецификации).
- * Дубли ищутся по номеру/заголовку → хешу → и только для подозрительных
- * совпадений выполняется текстовое сравнение. Попарное сравнение всех
- * глав со всеми не делается.
- */
-
-function chapterPlainText(ch) {
-  return ch.blocks.map(blockText).join('\n');
-}
+const duplicateIssue = 'Совпадение глав:';
+const hashByBlocks = new WeakMap();
 
 function normForHash(text) {
   return text
@@ -21,9 +14,12 @@ function normForHash(text) {
     .trim();
 }
 
-function countWords(text) {
-  const m = text.match(/[\p{L}\p{N}][\p{L}\p{N}''’\-]*/gu);
-  return m ? m.length : 0;
+function contentHash(blocks) {
+  if (!hashByBlocks.has(blocks)) {
+    const hash = crypto.createHash('sha256').update(JSON.stringify(blocks)).digest('hex');
+    hashByBlocks.set(blocks, hash);
+  }
+  return hashByBlocks.get(blocks);
 }
 
 /** Ключ тождества главы: номер+тип, иначе нормализованное название. */
@@ -62,15 +58,7 @@ function auditChapters(chapters) {
     lastNumber: null,
   };
 
-  // Предрасчёт: текст, хеш, слова, картинки.
   for (const ch of chapters) {
-    const text = chapterPlainText(ch);
-    ch._text = text;
-    ch._hash = crypto.createHash('sha1').update(normForHash(text)).digest('hex');
-    ch._words = countWords(text);
-    ch._images = ch.blocks.filter((b) => b.type === 'image').length;
-    ch._blockCount = ch.blocks.length;
-
     if (ch.encoding) {
       report.encodings[ch.encoding] = (report.encodings[ch.encoding] || 0) + 1;
     }
@@ -84,48 +72,35 @@ function auditChapters(chapters) {
     }
   }
 
-  /* ── дубли и несколько версий одной главы ── */
+  return refreshAuditSelection(report, chapters);
+}
+
+function findDuplicates(chapters) {
   const groups = new Map();
   for (const ch of chapters) {
+    if (!ch.blocks.length) continue;
     const key = identityKey(ch);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(ch);
   }
 
-  for (const [key, group] of groups) {
+  const duplicates = [];
+  for (const group of groups.values()) {
     if (group.length < 2) continue;
-
-    // Выбираем наиболее полную валидную версию.
-    const ranked = [...group].sort((a, b) => {
-      const aBad = a.issues.some((i) => i.startsWith('Файл не разобран')) ? 1 : 0;
-      const bBad = b.issues.some((i) => i.startsWith('Файл не разобран')) ? 1 : 0;
-      if (aBad !== bBad) return aBad - bBad;
-      if (b._words !== a._words) return b._words - a._words;
-      if (b._images !== a._images) return b._images - a._images;
-      return b._blockCount - a._blockCount;
-    });
-    const winner = ranked[0];
-    const identical = group.every((g) => g._hash === winner._hash);
-
-    for (const ch of ranked.slice(1)) {
-      ch.include = false;
-      ch.issues.push(
-        identical
-          ? `Точный дубль: выбрана версия из «${winner.sourceName}»`
-          : `Другая версия этой главы (${ch._words} слов против ${winner._words}): выбрана «${winner.sourceName}»`,
-      );
+    const [first] = group;
+    const hash = contentHash(first.blocks);
+    const identical = group.every(ch => contentHash(ch.blocks) === hash);
+    for (const ch of group) {
+      ch.issues.push(`${duplicateIssue} ${identical ? 'точный дубль' : 'другая версия'}`);
     }
-
-    report.duplicates.push({
-      key,
-      label: chapterLabel(winner),
+    duplicates.push({
+      number: first.number,
+      label: chapterLabel(first),
       identical,
-      kept: winner.sourceName,
-      dropped: ranked.slice(1).map((c) => ({ file: c.sourceName, words: c._words })),
+      versions: group.map(ch => ({ file: ch.sourceName, words: contentStats(ch.blocks).words, include: ch.include })),
     });
   }
-
-  return refreshAuditSelection(report, chapters);
+  return duplicates;
 }
 
 /** Recheck the selected book without reselecting duplicate versions. */
@@ -137,7 +112,10 @@ function refreshAuditSelection(report, chapters) {
   report.chapters = 0;
   report.extras = [];
   report.images = { total: 0, inChapters: 0, gallery: 0 };
-  for (const ch of chapters) ch.issues = ch.issues.filter(i => !i.startsWith('Глава заметно короче остальных'));
+  for (const ch of chapters) {
+    ch.issues = ch.issues.filter(i => !i.startsWith('Глава заметно короче остальных') && !i.startsWith(duplicateIssue));
+  }
+  report.duplicates = findDuplicates(chapters);
   /* ── нумерация и пропуски ── */
   const active = chapters.filter((c) => c.include);
   const nums = active
@@ -156,14 +134,15 @@ function refreshAuditSelection(report, chapters) {
   }
 
   /* ── подозрительно короткие главы ── */
-  const wordCounts = active.filter((c) => c.kind === KIND.CHAPTER && c._words > 0).map((c) => c._words);
+  const wordCounts = active.filter(c => c.kind === KIND.CHAPTER).map(c => contentStats(c.blocks).words).filter(n => n > 0);
   const med = median(wordCounts);
   if (med > 0) {
     for (const ch of active) {
       if (ch.kind !== KIND.CHAPTER) continue;
-      if (ch._words > 0 && ch._words < med * 0.2) {
-        report.shortSuspects.push({ label: chapterLabel(ch), words: ch._words, median: Math.round(med) });
-        ch.issues.push(`Глава заметно короче остальных (${ch._words} слов при медиане ${Math.round(med)})`);
+      const { words } = contentStats(ch.blocks);
+      if (words > 0 && words < med * 0.2) {
+        report.shortSuspects.push({ label: chapterLabel(ch), words, median: Math.round(med) });
+        ch.issues.push(`Глава заметно короче остальных (${words} слов при медиане ${Math.round(med)})`);
       }
     }
   }
@@ -172,9 +151,10 @@ function refreshAuditSelection(report, chapters) {
   for (const ch of active) {
     if (ch.kind === KIND.CHAPTER) report.chapters += 1;
     else report.extras.push({ kind: ch.kind, label: chapterLabel(ch) });
-    report.images.total += ch._images;
-    if (ch.kind === KIND.COVER_GALLERY) report.images.gallery += ch._images;
-    else report.images.inChapters += ch._images;
+    const { images } = contentStats(ch.blocks);
+    report.images.total += images;
+    if (ch.kind === KIND.COVER_GALLERY) report.images.gallery += images;
+    else report.images.inChapters += images;
   }
   report.included = active.length;
 
@@ -194,11 +174,18 @@ function missingNumbers(numbers) {
 }
 
 function auditWarnings(report) {
-  return [
+  const warnings = [
     ...(report.gaps.length ? [`В выбранной книге отсутствуют главы: ${missingNumbers(report.gaps)}. Проверьте исходники и включённые главы.`] : []),
     ...report.empty.map(e => `Пустой файл «${e.file}»: нет текста или иллюстраций. Он исключён из книги.`),
     ...report.broken.map(e => `Файл «${e.file}» не разобран и исключён из книги: ${e.reason.replace(/^Файл не разобран:\s*/, '')}`),
   ];
+  for (const match of report.duplicates) {
+    const included = match.versions.filter(version => version.include);
+    if (included.length < 2) continue;
+    const reason = match.number === null ? 'Выбрано несколько разделов с одним названием' : 'Выбрано несколько глав с одним номером';
+    warnings.push(`${reason} «${match.label}»: ${included.map(version => version.file).join(', ')}.`);
+  }
+  return warnings;
 }
 
-module.exports = { auditChapters, refreshAuditSelection, auditWarnings, countWords, chapterPlainText };
+module.exports = { auditChapters, refreshAuditSelection, auditWarnings };

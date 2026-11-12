@@ -8,6 +8,8 @@ const DASH = '[—–‒―\\-]';
 /* \b в JS опирается на латиницу, поэтому после кириллического слова он не
    срабатывает — границу задаём явно через отсутствие следующей буквы. */
 const EOW = '(?![\\p{L}\\p{N}])';
+const GALLERY_WORDS = 'иллюстрации|иллюстрация|illustrations?|арты|арт|gallery';
+const GALLERY_LABEL = new RegExp(`^(?:${GALLERY_WORDS})[.!?…]*$`, 'iu');
 
 const KIND_WORDS = [
   { re: new RegExp(`^(пролог|prologue)${EOW}`, 'iu'), kind: KIND.PROLOGUE },
@@ -17,7 +19,7 @@ const KIND_WORDS = [
     kind: KIND.AFTERWORD,
   },
   {
-    re: new RegExp(`^(иллюстрации|иллюстрация|illustrations?|арты|арт|gallery)${EOW}`, 'iu'),
+    re: new RegExp(`^(?:${GALLERY_WORDS})${EOW}`, 'iu'),
     kind: KIND.COVER_GALLERY,
   },
   { re: new RegExp(`^(экстра|бонус|extra|bonus|side\\s*story|спешл)${EOW}`, 'iu'), kind: KIND.EXTRA },
@@ -29,6 +31,16 @@ function kindFromTitle(title) {
     if (re.test(String(title || '').trim())) return kind;
   }
   return null;
+}
+
+function isGalleryLabel(text) {
+  return GALLERY_LABEL.test(text.trim());
+}
+
+function numberedHeading(number, text) {
+  const title = text.trim();
+  const kind = kindFromTitle(title);
+  return kind ? { kind, number: null, title } : { kind: KIND.CHAPTER, number: Number(number), title };
 }
 
 function stripExt(name) {
@@ -65,18 +77,12 @@ function parseHeading(raw) {
   }
 
   // «Глава 12. Название» / «Chapter 12 — Название» / «Том 1 Глава 5»
-  let m = s.match(new RegExp(`^(?:глава|chapter|ch\\.?|часть|гл\\.?)\\s*(\\d{1,4})\\s*(?:[.:·]|${DASH})?\\s*(.*)$`, 'i'));
-  if (m) {
-    const title = m[2].trim();
-    // «Глава 0. Иллюстрации» — это галерея, а не глава с номером 0.
-    const byTitle = kindFromTitle(title);
-    if (byTitle) return { kind: byTitle, number: null, title };
-    return { kind: KIND.CHAPTER, number: Number(m[1]), title };
-  }
+  let m = s.match(new RegExp(`^(?:глава|chapter|ch\\.?|часть|гл\\.?)\\s*(?:№\\s*)?(\\d{1,4})(?!\\d)\\s*(?:[.:·]|${DASH})?\\s*(.*)$`, 'i'));
+  if (m) return numberedHeading(m[1], m[2]);
 
   // «000 — Название» / «001. Название» / «12) Название»
   m = s.match(new RegExp(`^(\\d{1,4})\\s*(?:[.:·)\\]]|${DASH})\\s*(.*)$`));
-  if (m) return { kind: KIND.CHAPTER, number: Number(m[1]), title: m[2].trim() };
+  if (m) return numberedHeading(m[1], m[2]);
 
   // Только номер: «000», «012»
   m = s.match(/^(\d{1,4})$/);
@@ -90,8 +96,8 @@ function parseHeading(raw) {
  * Имя файла — запасной источник до разбора явного заголовка документа.
  */
 function fromFilename(filename) {
-  const base = restoreFilenameChars(stripExt(filename)).replace(/^(глава|chapter|гл\.?)_+(\d)/iu, '$1 $2');
-  const parsed = parseHeading(base);
+  const base = restoreFilenameChars(stripExt(filename));
+  const parsed = parseHeading(base.replace(/_/g, ' '));
   if (parsed) return parsed;
   return { kind: KIND.CHAPTER, number: null, title: base.trim() };
 }
@@ -126,4 +132,4 @@ function isTitleRepeat(paraText, section) {
   return false;
 }
 
-module.exports = { parseHeading, fromFilename, isTitleRepeat, kindFromTitle, stripExt, restoreFilenameChars };
+module.exports = { parseHeading, fromFilename, isTitleRepeat, kindFromTitle, isGalleryLabel, stripExt, restoreFilenameChars };

@@ -48,7 +48,6 @@ async function buildPdf({ book, style, fonts, outPath, onProgress = () => {} }) 
     size: [geom.pageW, geom.pageH],
     margins: { top: 0, bottom: 0, left: 0, right: 0 },
     autoFirstPage: false,
-    bufferPages: true,
     pdfVersion: '1.7',
     lang: book.language || 'ru',
     displayTitle: true,

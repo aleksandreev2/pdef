@@ -62,3 +62,46 @@ test('consecutive chapters in a later volume produce no missing-start warning',a
   const result=await analyze([dir]);
   assert.deepEqual(result.sourceWarnings,[]);
 });
+
+test('competing versions start selected and the author can choose which to export', async t => {
+  const dir = await fixture(t, {
+    'вариант A.txt': 'Глава 7. Путь\n\nТекст первой версии.',
+    'вариант B.txt': 'Глава 7. Начало\n\nТекст другой версии.',
+  });
+  const result = await analyze([dir]);
+  const [first, second] = result.summary.chapters;
+  assert.equal(result.audit.duplicates.length, 1);
+  assert.ok(first.include && second.include);
+  assert.ok(result.sourceWarnings.some(w => /одним номером/.test(w)));
+  const edited = applyEdits({ chapters: [{ id: first.id, include: false }] });
+  assert.deepEqual(edited.summary.chapters.filter(c => c.include).map(c => c.id), [second.id]);
+  assert.deepEqual(edited.sourceWarnings, []);
+  const report = await build({ meta: {}, outDir: path.join(dir, 'out'), formats: { pdf: false, epub: false, txt: true } });
+  const text = await fs.readFile(report.txt.path, 'utf8');
+  assert.match(text, /другой версии/);
+  assert.doesNotMatch(text, /первой версии/);
+  const restored = applyEdits({ chapters: [{ id: first.id, include: true }] });
+  assert.equal(restored.audit.included, 2);
+});
+
+test('edited chapter titles and numbers update the audit, order and exported headings', async t => {
+  const dir = await fixture(t, {
+    'A.txt': 'Глава 1. Начало\n\nТекст первой главы.',
+    'B.txt': 'Глава 1. Черновик\n\nТекст второй главы.',
+  });
+  const loaded = await analyze([dir]);
+  const [first, second] = loaded.summary.chapters;
+  let edited = applyEdits({ chapters: [{ id: second.id, title: ' Дорога ', number: 0 }] });
+  assert.deepEqual(edited.summary.chapters.map(ch => [ch.id, ch.number, ch.title]), [
+    [second.id, 0, 'Дорога'], [first.id, 1, 'Начало'],
+  ]);
+  assert.deepEqual(edited.audit.duplicates, []);
+  assert.ok(edited.summary.chapters.every(ch => ch.issues.every(issue => !/версия|дубль/.test(issue))));
+  edited = applyEdits({ chapters: [{ id: second.id, number: -1 }, { id: first.id, number: 1.5 }] });
+  assert.deepEqual(edited.summary.chapters.map(ch => ch.number), [0, 1]);
+  const report = await build({ meta: {}, outDir: path.join(dir, 'out'), formats: { pdf: false, epub: false, txt: true } });
+  const text = await fs.readFile(report.txt.path, 'utf8');
+  assert.match(text, /000\. Дорога[\s\S]*001\. Начало/);
+  edited = applyEdits({ chapters: [{ id: second.id, number: null }] });
+  assert.equal(edited.summary.chapters.find(ch => ch.id === second.id).number, null);
+});

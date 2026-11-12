@@ -214,9 +214,9 @@
     <div class="panels">
 
       <div class="panel active" data-panel="chapters">
-        <div class="panel-head">
+        <div class="panel-head" id="chapterTools">
           <div class="filters">
-            <input id="chapterFilter" type="search" placeholder="Поиск по названию или файлу"/>
+            <input id="chapterFilter" type="search" aria-label="Поиск глав" placeholder="Номер, название или файл"/>
             <label class="inline"><input id="onlyProblems" type="checkbox"/><span>только с замечаниями</span></label>
           </div>
           <div class="bulk">
@@ -229,7 +229,7 @@
           <table class="chapters">
             <thead>
               <tr>
-                <th class="col-on"></th>
+                <th class="col-on" aria-label="Включить в книгу"></th>
                 <th class="col-num">№</th>
                 <th class="col-title">Название</th>
                 <th class="col-kind">Тип</th>
