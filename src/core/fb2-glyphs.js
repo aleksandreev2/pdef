@@ -54,7 +54,8 @@ function createFb2Glyphs(fonts = {}) {
     const pad = (bottom - top) * 0.08;
     const view = [left - pad, top - pad, right - left + 2 * pad, bottom - top + 2 * pad];
     const width = Math.min(44, Math.max(1, Math.ceil(19 * view[2] / view[3])));
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="19" viewBox="${view.join(' ')}"><g fill="#252736" stroke="#fff2d6" stroke-width="${pad * 0.8}" stroke-linejoin="round">${paths.join('')}</g></svg>`;
+    const outlines = paths.join('');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="19" viewBox="${view.join(' ')}"><g fill="none" stroke="#fff2d6" stroke-width="${pad}" stroke-linejoin="round">${outlines}</g><g fill="#252736">${outlines}</g></svg>`;
     const { Resvg } = require('@resvg/resvg-js');
     return new Resvg(svg).render().asPng();
   }
