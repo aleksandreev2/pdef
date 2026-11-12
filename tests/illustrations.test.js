@@ -80,8 +80,8 @@ test('any imported chapter illustration can become the cover, including a later 
     illustrations: { version: 'without', keepCover: true },
   });
   const out = await epub(report.epub.path);
-  assert.deepEqual(out.images, ['EPUB/images/cover.webp']);
-  assert.deepEqual(await out.zip.file(out.images[0]).async('nodebuffer'), second);
+  assert.deepEqual(out.images.filter(name => !name.startsWith('EPUB/images/pdef-ornament-')), ['EPUB/images/cover.webp']);
+  assert.deepEqual(await out.zip.file('EPUB/images/cover.webp').async('nodebuffer'), second);
   assert.equal(report.qa.pdf.checks.find(check => check.name.includes('Обложка одна')).ok, true);
   assert.equal(report.pdf.warnings.some(warning => warning.startsWith('Обложка не вставлена')), false);
 });

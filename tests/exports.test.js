@@ -71,6 +71,33 @@ test('FB2 compatibility exports supplementary graphemes inline and restores thei
   const imported = await importSources([report.fb2.path]);
   assert.ok(imported.chapters[0].blocks.some(block => blockText(block) === text));
 });
+
+test('EPUB embeds reusable PNG ornaments and emoji for reading apps that drop inline SVG and glyphs', async t => {
+  const dir = await fixture(t);
+  const file = path.join(dir, 'chapter.txt');
+  await fs.writeFile(file, 'Глава 8. Проход\n\n[002] — 🤨 🤭 🤨\n\n* * *\n\nПродолжение текста.');
+  await analyze([file]);
+  const kindle = Boolean(await require('../src/core/export/kindle').findConverter());
+  const report = await build({ meta: {}, style: { genre: 'litrpg' }, outDir: dir, formats: { pdf: false, epub: true, mobi: kindle, azw3: kindle } });
+  const zip = await JSZip.loadAsync(await fs.readFile(report.epub.path));
+  const read = name => zip.file(`EPUB/${name}`).async('string');
+  const chapter = await read('text/ch001.xhtml');
+  const title = await read('text/title.xhtml');
+  const manifest = await read('package.opf');
+  assert.doesNotMatch(chapter + title, /<svg\b/);
+  for (const name of ['pdef-ornament-opener', 'pdef-ornament-divider', 'pdef-glyph-1f928', 'pdef-glyph-1f92d']) {
+    assert.match(chapter, new RegExp(`src="../images/${name}\\.png"`));
+    assert.match(manifest, new RegExp(`href="images/${name}\\.png" media-type="image/png"`));
+    const png = await zip.file(`EPUB/images/${name}.png`).async('nodebuffer');
+    assert.equal(png.readUInt32BE(0), 0x89504e47);
+    assert.equal(png[25], 6, 'RGBA PNG');
+  }
+  assert.match(title, /pdef-ornament-opener\.png/);
+  assert.equal((chapter.match(/pdef-glyph-1f928\.png/g) || []).length, 2);
+  assert.match(chapter, /alt="🤨"/u);
+  assert.equal(report.qa.epub.ok, true, JSON.stringify(report.qa.epub.checks));
+  if (kindle) for (const format of ['mobi', 'azw3']) assert.equal(report.qa[format].ok, true, JSON.stringify(report.qa[format].checks));
+});
 test('export with no selected formats fails before creating files',async t=>{
   const dir=await fixture(t);
   await assert.rejects(build({meta:{},outDir:path.join(dir,'no-output'),formats:{pdf:false,epub:false,fb2:false,mobi:false,azw3:false,txt:false}}),/Выберите.*формат/i);

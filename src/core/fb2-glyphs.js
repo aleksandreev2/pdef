@@ -13,7 +13,7 @@ function readFb2Glyph(href) {
   return supplementary.test(value) && [...graphemes.segment(value)].length === 1 ? value : null;
 }
 
-function createFb2Glyphs(fonts = {}) {
+function createGlyphImages(fonts = {}) {
   const resources = new Map();
   const missing = new Set();
   let doc, measurer;
@@ -60,12 +60,12 @@ function createFb2Glyphs(fonts = {}) {
     return new Resvg(svg).render().asPng();
   }
 
-  function markup(value, escape = text => text) {
+  function markup(value, escape, imageMarkup, accepts = () => true) {
     if (!supplementary.test(value)) return escape(value);
     let text = '';
     let start = 0;
     for (const { segment, index } of graphemes.segment(value)) {
-      if (!supplementary.test(segment)) continue;
+      if (!supplementary.test(segment) || !accepts(segment)) continue;
       text += escape(value.slice(start, index));
       start = index + segment.length;
       const codes = [...segment].map(char => char.codePointAt(0).toString(16));
@@ -75,8 +75,7 @@ function createFb2Glyphs(fonts = {}) {
         if (data) resources.set(id, { id, data, mime: 'image/png' });
         else missing.add(id);
       }
-      const label = codes.map(code => 'U+' + code.toUpperCase()).join(' ');
-      text += resources.has(id) ? `<image l:href="#${id}" alt="${label}"/>` : `[${label}]`;
+      text += imageMarkup(resources.get(id), segment, codes);
     }
     return text + escape(value.slice(start));
   }
@@ -84,4 +83,12 @@ function createFb2Glyphs(fonts = {}) {
   return { markup, resources, missing };
 }
 
-module.exports = { createFb2Glyphs, readFb2Glyph };
+function createFb2Glyphs(fonts) {
+  const glyphs = createGlyphImages(fonts);
+  return { ...glyphs, markup: (value, escape = text => text) => glyphs.markup(value, escape, (resource, _segment, codes) => {
+    const label = codes.map(code => 'U+' + code.toUpperCase()).join(' ');
+    return resource ? `<image l:href="#${resource.id}" alt="${label}"/>` : `[${label}]`;
+  }) };
+}
+
+module.exports = { createFb2Glyphs, createGlyphImages, readFb2Glyph };

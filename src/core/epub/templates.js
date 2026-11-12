@@ -1,7 +1,7 @@
 'use strict';
 
 const { chapterLabel, chapterKicker } = require('../model');
-const { svgTitleMark, svgSceneBreak } = require('../signature');
+const { ornamentId, imageHref } = require('./media');
 const { ATTRIBUTION_LINES } = require('../credits');
 
 /** Экранирование текста для XML. */
@@ -19,10 +19,10 @@ const escAttr = esc;
 
 /* ─────────────────────────── runs → inline XHTML ─────────────────────────── */
 
-function runsToHtml(runs) {
+function runsToHtml(runs, text = esc) {
   return (runs || [])
     .map((r) => {
-      let html = esc(r.text);
+      let html = text(r.text);
       if (r.b) html = `<strong>${html}</strong>`;
       if (r.i) html = `<em>${html}</em>`;
       if (r.u) html = `<span class="u">${html}</span>`;
@@ -173,7 +173,7 @@ p.kicker {
 }
 
 .opener-mark { margin: 1em 0 0.8em; text-indent: 0; text-align: center; }
-.opener-mark svg { width: 100%; max-width: 20em; height: auto; }
+.opener-mark img { width: 100%; max-width: 20em; height: auto; }
 
 /* Системные окна, чаты, панели — отдельный структурный элемент. */
 .sysblock {
@@ -204,7 +204,7 @@ p.kicker {
   color: ${style.accent};
 }
 
-.scene svg { width: 100%; max-width: 22em; height: auto; }
+.scene img { width: 100%; max-width: 22em; height: auto; }
 
 .kicker-rule { width: 35%; height: 0; margin: 0.6em auto 1em; border-top: 1px solid ${style.accent}; }
 .sysblock p:first-of-type strong { color: ${style.accent}; }
@@ -224,6 +224,7 @@ img {
   display: block;
   margin: 0 auto;
 }
+img.pdef-emoji { display: inline; width: auto; height: 1em; margin: 0; vertical-align: -0.15em; }
 
 /* Обложка — отдельная страница на всю высоту экрана. */
 .cover-page {
@@ -243,7 +244,7 @@ img {
 .titlepage { text-align: center; padding-top: 2.2em; }
 .titlepage h1 { font-size: 1.9em; line-height: 1.2; margin: 0 0 0.6em 0; }
 .titlepage .mark { margin: 0.8em 0 1.1em 0; }
-.titlepage .mark svg { width: 90%; max-width: 20em; height: auto; }
+.titlepage .mark img { width: 90%; max-width: 20em; height: auto; }
 .titlepage .edition {
   font-family: "PT Sans", "Segoe UI", Arial, sans-serif;
   font-weight: 700;
@@ -328,10 +329,15 @@ function attributionXhtml() {
   ].join('\n');
 }
 
-function titleXhtml(book, style, counts) {
-  const mark = style.signature ? `    <div class="mark">${svgTitleMark(style.accent, style.genre)}</div>\n` : '';
+function ornamentImage(part) {
+  const alt = part === 'divider' ? '* * *' : '';
+  return `<img src="../${imageHref(ornamentId(part))}" alt="${alt}"/>`;
+}
+
+function titleXhtml(book, style, counts, text = esc) {
+  const mark = style.signature ? `    <div class="mark">${ornamentImage('opener')}</div>` : '';
   const body = [
-    `    <h1>${esc(book.title)}</h1>`,
+    `    <h1>${text(book.title)}</h1>`,
     mark.trimEnd(),
     `    <p class="edition">${esc(book.subtitle || 'Полное издание')}</p>`,
     `    <p class="counts">${esc(counts.chapters)}</p>`,
@@ -356,13 +362,13 @@ function aboutXhtml(book) {
 }
 
 /** Блоки главы → XHTML. */
-function chapterBody(ch, style, hrefOfAsset) {
+function chapterBody(ch, style, hrefOfAsset, text) {
   const out = [];
-  if (style.signature) out.push(`    <p class="opener-mark">${svgTitleMark(style.accent, style.genre)}</p>`);
+  if (style.signature) out.push(`    <p class="opener-mark">${ornamentImage('opener')}</p>`);
   const kicker = chapterKicker(ch);
   if (kicker) out.push(`    <p class="kicker">${esc(kicker)}</p>`);
   if(style.signature && kicker) out.push('    <div class="kicker-rule"></div>');
-  if (ch.title) out.push(`    <h1 class="chapter-title">${esc(ch.title)}</h1>`);
+  if (ch.title) out.push(`    <h1 class="chapter-title">${text(ch.title)}</h1>`);
   else if (kicker) out.push(`    <h1 class="chapter-title">${esc(kicker)}</h1>`);
 
   let firstPara = true;
@@ -371,29 +377,29 @@ function chapterBody(ch, style, hrefOfAsset) {
       case 'para': {
         const cls = firstPara ? ' class="noindent"' : '';
         const alignment = ['left','center','right','justify'].includes(block.align) ? ` style="text-align:${block.align};text-indent:0"` : '';
-        out.push(`    <p${cls}${alignment}>${runsToHtml(block.runs)}</p>`);
+        out.push(`    <p${cls}${alignment}>${runsToHtml(block.runs, text)}</p>`);
         firstPara = false;
         break;
       }
       case 'heading':
-        out.push(`    <h2>${runsToHtml(block.runs)}</h2>`);
+        out.push(`    <h2>${runsToHtml(block.runs, text)}</h2>`);
         firstPara = true;
         break;
       case 'system': {
-        const lines = block.lines.map((runs) => `      <p>${runsToHtml(runs)}</p>`).join('\n');
+        const lines = block.lines.map((runs) => `      <p>${runsToHtml(runs, text)}</p>`).join('\n');
         out.push(`    <div class="sysblock" role="note">\n${lines}\n    </div>`);
         firstPara = true;
         break;
       }
       case 'list': {
         const tag = block.ordered ? 'ol' : 'ul';
-        const items = block.items.map((runs) => `      <li>${runsToHtml(runs)}</li>`).join('\n');
+        const items = block.items.map((runs) => `      <li>${runsToHtml(runs, text)}</li>`).join('\n');
         out.push(`    <${tag}>\n${items}\n    </${tag}>`);
         firstPara = true;
         break;
       }
       case 'sep':
-        out.push(`    <p class="scene">${style.signature ? svgSceneBreak(style.accent, style.genre) : '* * *'}</p>`);
+        out.push(`    <p class="scene">${style.signature ? ornamentImage('divider') : '* * *'}</p>`);
         firstPara = true;
         break;
       case 'image': {
@@ -413,12 +419,12 @@ function chapterBody(ch, style, hrefOfAsset) {
   return out.join('\n');
 }
 
-function chapterXhtml(book, ch, style, hrefOfAsset) {
+function chapterXhtml(book, ch, style, hrefOfAsset, text = esc) {
   return page(book, {
     title: chapterLabel(ch),
     bodyClass: style.signature ? 'chapter decorated' : 'chapter',
     epubType: 'chapter',
-    body: chapterBody(ch, style, hrefOfAsset),
+    body: chapterBody(ch, style, hrefOfAsset, text),
   });
 }
 

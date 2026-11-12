@@ -3,6 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { clampStyle } = require('../src/core/style');
 const { svgSceneBreak } = require('../src/core/signature');
+const { ornamentPng } = require('../src/core/epub/media');
 const { chapterXhtml, navXhtml } = require('../src/core/epub/templates');
 
 const genres = ['fantasy', 'dark-fantasy', 'horror', 'sci-fi', 'litrpg', 'romance', 'historical', 'thriller', 'cultivation', 'regression'];
@@ -28,8 +29,8 @@ test('genre presets set note colors and reject unknown genre names', () => {
 test('EPUB uses the chosen ornament in place of source separator characters', () => {
   const chapter = { kind: 'chapter', number: 1, title: 'Начало', blocks: [{ type: 'para', runs: [{ text: 'До перехода.' }] }, { type: 'sep', text: '──────────' }, { type: 'para', runs: [{ text: 'После перехода.' }] }] };
   const fantasy = chapterXhtml({ language: 'ru' }, chapter, clampStyle({ genre: 'fantasy' }), () => '');
-  const romance = chapterXhtml({ language: 'ru' }, chapter, clampStyle({ genre: 'romance' }), () => '');
   assert.ok(!fantasy.includes('──────────'));
   assert.ok(fantasy.includes('До перехода.') && fantasy.includes('После перехода.'));
-  assert.notEqual(fantasy, romance);
+  assert.match(fantasy, /pdef-ornament-divider\.png/);
+  assert.notDeepEqual(ornamentPng(svgSceneBreak('#765432', 'fantasy')), ornamentPng(svgSceneBreak('#765432', 'romance')));
 });

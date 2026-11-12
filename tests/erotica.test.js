@@ -27,5 +27,5 @@ test('EPUB erotica preserves prose and uses the selected scene divider', () => {
   const style=clampStyle({genre:'erotica'});
   const html=chapterXhtml({language:'ru'},chapter,style,()=>null);
   assert.ok(html.includes('Текст книги.'));
-  assert.ok(html.includes(svgSceneBreak(style.accent,'erotica')));
+  assert.match(html, /<p class="scene"><img src="\.\.\/images\/pdef-ornament-divider\.png" alt="\* \* \*"\/>/);
 });

@@ -5,6 +5,8 @@ const crypto = require('crypto');
 const JSZip = require('jszip');
 
 const T = require('./templates');
+const { createEpubGlyphs, ornamentId, imageHref, ornamentPng } = require('./media');
+const { svgTitleMark, svgSceneBreak } = require('../signature');
 const { chapterLabel } = require('../model');
 const { fmtNumber, plural } = require('../pdf/build');
 
@@ -28,7 +30,7 @@ function pad(n, len = 3) {
   return String(n).padStart(len, '0');
 }
 
-async function buildEpub({ book, style, outPath, onProgress = () => {} }) {
+async function buildEpub({ book, style, fonts, outPath, onProgress = () => {} }) {
   const warnings = [];
   const zip = new JSZip();
 
@@ -45,6 +47,21 @@ async function buildEpub({ book, style, outPath, onProgress = () => {} }) {
   const items = [];
   const spine = [];
   const navEntries = [];
+  const glyphs = fonts ? createEpubGlyphs(fonts) : null;
+  const text = glyphs ? value => glyphs.markup(value, T.esc) : T.esc;
+
+  function addPng(id, data) {
+    const href = imageHref(id);
+    zip.file(`EPUB/${href}`, data);
+    items.push({ id, href, type: 'image/png' });
+  }
+
+  if (style.signature) {
+    addPng(ornamentId('opener'), ornamentPng(svgTitleMark(style.accent, style.genre)));
+    if (active.some(ch => ch.blocks.some(block => block.type === 'sep'))) {
+      addPng(ornamentId('divider'), ornamentPng(svgSceneBreak(style.accent, style.genre)));
+    }
+  }
 
   /* ── ресурсы: только реально использованные иллюстрации ── */
   const usedAssets = new Set();
@@ -102,8 +119,8 @@ async function buildEpub({ book, style, outPath, onProgress = () => {} }) {
     chapters: `${fmtNumber(stats.chapters)} ${plural(stats.chapters, 'глава', 'главы', 'глав')}`,
     words: `${fmtNumber(stats.words)} ${plural(stats.words, 'слово', 'слова', 'слов')}`,
   };
-  zip.file('EPUB/text/title.xhtml', T.titleXhtml(bookMeta, style, counts));
-  items.push({ id: 'titlepage', href: 'text/title.xhtml', type: 'application/xhtml+xml', properties: style.signature ? 'svg' : undefined });
+  zip.file('EPUB/text/title.xhtml', T.titleXhtml(bookMeta, style, counts, text));
+  items.push({ id: 'titlepage', href: 'text/title.xhtml', type: 'application/xhtml+xml' });
   spine.push('titlepage');
 
   /* ── сведения о переводе ── */
@@ -117,15 +134,17 @@ async function buildEpub({ book, style, outPath, onProgress = () => {} }) {
     const ch = active[i];
     const id = `ch${pad(i + 1)}`;
     const href = `text/${id}.xhtml`;
-    const xhtml = T.chapterXhtml(bookMeta, ch, style, hrefOfAsset);
+    const xhtml = T.chapterXhtml(bookMeta, ch, style, hrefOfAsset, text);
     zip.file(`EPUB/${href}`, xhtml);
-    items.push({ id, href, type: 'application/xhtml+xml', properties: xhtml.includes('<svg') ? 'svg' : undefined });
+    items.push({ id, href, type: 'application/xhtml+xml' });
     spine.push(id);
     navEntries.push({ href, label: chapterLabel(ch) });
     if (i % 20 === 0 || i === active.length - 1) {
       onProgress({ phase: 'epub', label: `EPUB: ${chapterLabel(ch)}`, done: i + 1, total: active.length });
     }
   }
+  for (const { id, data } of glyphs?.resources.values() || []) addPng(id, data);
+  if (glyphs?.missing.size) warnings.push(`EPUB: ${glyphs.missing.size} эмодзи сохранены текстом, подходящие глифы не найдены`);
 
   /* ── nav.xhtml: в manifest, но НЕ в spine ── */
   zip.file('EPUB/nav.xhtml', T.navXhtml(bookMeta, navEntries));
@@ -150,6 +169,7 @@ async function buildEpub({ book, style, outPath, onProgress = () => {} }) {
     documents: spine.length,
     chapters: active.length,
     images: usedAssets.size,
+    glyphImages: glyphs?.resources.size || 0,
     warnings,
   };
 }

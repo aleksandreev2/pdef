@@ -284,13 +284,13 @@ async function buildVersion(opts, onProgress, book, outDir, version) {
   const wantPdf = formats.pdf;
   const wantEpub = formats.epub;
   let temp=null, tempParent=null;
+  async function makeKindleSourcePath() {
+    tempParent=await fs.realpath(os.tmpdir());
+    temp=await fs.mkdtemp(path.join(tempParent,'pdfmaker-export-'));
+    return path.join(temp,'source.epub');
+  }
   try {
-    let kindleEpubPath=epubPath;
-    if(needKindle && !wantEpub) {
-      tempParent=await fs.realpath(os.tmpdir());
-      temp=await fs.mkdtemp(path.join(tempParent,'pdfmaker-export-'));
-      kindleEpubPath=path.join(temp,'source.epub');
-    }
+    let kindleEpubPath=needKindle && !wantEpub ? await makeKindleSourcePath() : epubPath;
 
     // Независимые операции выполняются параллельно (п.10 спецификации).
     const tasks = [];
@@ -299,7 +299,7 @@ async function buildVersion(opts, onProgress, book, outDir, version) {
         ? buildPdf({ book, style, fonts, outPath: pdfPath, onProgress })
         : Promise.resolve(null),
     );
-    tasks.push(wantEpub || needKindle ? buildEpub({ book, style, outPath: kindleEpubPath, onProgress }) : Promise.resolve(null));
+    tasks.push(wantEpub || needKindle ? buildEpub({ book, style, fonts: wantEpub ? fonts : undefined, outPath: kindleEpubPath, onProgress }) : Promise.resolve(null));
     tasks.push(formats.fb2 ? buildFb2({book,style,fonts,compatibility:fb2Compatibility,outPath:exportPath('fb2'),onProgress}) : Promise.resolve(null));
     tasks.push(formats.txt ? buildTxt({book,outPath:exportPath('txt'),onProgress}) : Promise.resolve(null));
 
@@ -307,6 +307,11 @@ async function buildVersion(opts, onProgress, book, outDir, version) {
     const failure=settled.find(r=>r.status==='rejected');if(failure) throw failure.reason;
     const [pdfResult, epubResult, fb2Result, txtResult] = settled.map(r=>r.value);
     const extraResults={fb2:fb2Result,txt:txtResult};
+    // Legacy MOBI conversion discards image alt text. Keep Unicode in the Kindle source.
+    if (needKindle && wantEpub && epubResult.glyphImages) {
+      kindleEpubPath=await makeKindleSourcePath();
+      await buildEpub({ book, style, outPath: kindleEpubPath, onProgress });
+    }
     // Convert serially so long novels do not double Calibre's memory use.
     for(const format of ['mobi','azw3']) if(formats[format]) extraResults[format]=await buildKindle({book,format,epubPath:kindleEpubPath,outPath:exportPath(format),converter,onProgress});
 
