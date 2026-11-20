@@ -117,7 +117,7 @@ async function buildEpub({ book, style, fonts, outPath, onProgress = () => {} })
     words: `${fmtNumber(stats.words)} ${plural(stats.words, 'слово', 'слова', 'слов')}`,
   };
   zip.file('EPUB/text/title.xhtml', T.titleXhtml(bookMeta, style, counts, text));
-  items.push({ id: 'titlepage', href: 'text/title.xhtml', type: 'application/xhtml+xml' });
+  items.push({ id: 'titlepage', href: 'text/title.xhtml', type: 'application/xhtml+xml', properties: style.signature ? 'svg' : undefined });
   spine.push('titlepage');
 
   /* ── сведения о переводе ── */
@@ -133,7 +133,7 @@ async function buildEpub({ book, style, fonts, outPath, onProgress = () => {} })
     const href = `text/${id}.xhtml`;
     const xhtml = T.chapterXhtml(bookMeta, ch, style, hrefOfAsset, text);
     zip.file(`EPUB/${href}`, xhtml);
-    items.push({ id, href, type: 'application/xhtml+xml' });
+    items.push({ id, href, type: 'application/xhtml+xml', properties: xhtml.includes('<svg ') ? 'svg' : undefined });
     spine.push(id);
     navEntries.push({ href, label: chapterLabel(ch) });
     if (i % 20 === 0 || i === active.length - 1) {

@@ -2,6 +2,7 @@
 
 const { chapterLabel, chapterKicker } = require('../model');
 const { ATTRIBUTION_LINES } = require('../credits');
+const { svgTitleMark, svgSceneBreak } = require('../signature');
 
 /** Экранирование текста для XML. */
 function esc(s) {
@@ -180,6 +181,21 @@ h1.chapter-title {
   text-align: center;
 }
 
+.chapter-ornament, .title-ornament {
+  display: block;
+  max-width: 20em;
+  margin: 0.6em auto 0;
+  color: inherit;
+  line-height: 0;
+}
+.title-ornament { margin: 0.8em auto 1.1em; }
+.chapter-ornament svg, .title-ornament svg, .scene svg {
+  display: block;
+  max-width: 100%;
+  margin: 0 auto;
+  color: inherit;
+}
+
 /* Системные окна, чаты, панели — отдельный структурный элемент. */
 .sysblock {
   margin: 0.85em 0;
@@ -334,9 +350,18 @@ function attributionXhtml() {
   ].join('\n');
 }
 
+// Keep the original genre paths, with no image canvas or fixed pixel height.
+function ornamentSvg(style, part, height) {
+  const draw = part === 'divider' ? svgSceneBreak : svgTitleMark;
+  return draw(style.accent, style.genre)
+    .replace(/#[0-9a-f]{6}/gi, 'currentColor')
+    .replace(/width="1000" height="\d+"/, `width="100%" height="${height}em"`);
+}
+
 function titleXhtml(book, style, counts, text = esc) {
   const body = [
     `    <h1>${text(book.title)}</h1>`,
+    style.signature ? `    <div class="title-ornament" aria-hidden="true">${ornamentSvg(style, 'opener', 3.5)}</div>` : '',
     `    <p class="edition">${esc(book.subtitle || 'Полное издание')}</p>`,
     `    <p class="counts">${esc(counts.chapters)}</p>`,
     `    <p class="counts">${esc(counts.words)}</p>`,
@@ -370,7 +395,9 @@ function chapterBody(ch, style, hrefOfAsset, text) {
       out.push(`      <span class="kicker">${esc(kicker)}</span>`);
       if (style.signature) out.push('      <span class="kicker-rule"></span>');
     }
-    out.push(`      <span class="chapter-name">${text(title)}</span>`, '    </h1>');
+    out.push(`      <span class="chapter-name">${text(title)}</span>`);
+    if (style.signature) out.push(`      <span class="chapter-ornament" aria-hidden="true">${ornamentSvg(style, 'opener', 2.5)}</span>`);
+    out.push('    </h1>');
   }
 
   let firstPara = true;
@@ -401,7 +428,7 @@ function chapterBody(ch, style, hrefOfAsset, text) {
         break;
       }
       case 'sep':
-        out.push('    <p class="scene">* * *</p>');
+        out.push(`    <p class="scene">${style.signature ? ornamentSvg(style, 'divider', 1.8) : '* * *'}</p>`);
         firstPara = true;
         break;
       case 'image': {

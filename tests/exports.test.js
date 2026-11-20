@@ -36,8 +36,8 @@ for(const format of ['txt','fb2']) test(`${format.toUpperCase()} exports only se
     assert.ok(imported.chapters.flatMap(c=>c.blocks).some(b=>b.type==='image'));
   } else {
     assert.ok(text.includes('* * *'));
-    assert.ok(text.includes('Документ создан с помощью PDeF.\nРазработчик — dollar\nвладелец команды «Дом Некроманта».\n\n' +
-      'https://github.com/aleksandreev2/pdef\nhttps://ranobelib.me/ru/user/726236\nhttps://ranobelib.me/ru/team/11969--dom-nekromanta'));
+    assert.ok(text.includes('Документ создан с помощью PDeF.\r\nРазработчик — dollar\r\nвладелец команды «Дом Некроманта».\r\n\r\n' +
+      'https://github.com/aleksandreev2/pdef\r\nhttps://ranobelib.me/ru/user/726236\r\nhttps://ranobelib.me/ru/team/11969--dom-nekromanta'));
   }
 });
 test('FB2 preserves cover, inline formatting, lists, links and image resources',async t=>{
@@ -72,7 +72,7 @@ test('FB2 compatibility exports supplementary graphemes inline and restores thei
   assert.ok(imported.chapters[0].blocks.some(block => blockText(block) === text));
 });
 
-test('EPUB uses text scene breaks and reusable PNG emoji without decorative images', async t => {
+test('EPUB preserves vector ornaments and reusable PNG emoji without raster ornament assets', async t => {
   const dir = await fixture(t);
   const file = path.join(dir, 'chapter.txt');
   await fs.writeFile(file, 'Глава 8. Проход\n\n[002] — 🤨 🤭 🤨\n\n* * *\n\nПродолжение текста.');
@@ -84,7 +84,7 @@ test('EPUB uses text scene breaks and reusable PNG emoji without decorative imag
   const chapter = await read('text/ch001.xhtml');
   const title = await read('text/title.xhtml');
   const manifest = await read('package.opf');
-  assert.doesNotMatch(chapter + title, /<svg\b/);
+  assert.match(chapter + title, /<svg\b/);
   for (const name of ['pdef-glyph-1f928', 'pdef-glyph-1f92d']) {
     assert.match(chapter, new RegExp(`src="../images/${name}\\.png"`));
     assert.match(manifest, new RegExp(`href="images/${name}\\.png" media-type="image/png"`));
@@ -94,7 +94,7 @@ test('EPUB uses text scene breaks and reusable PNG emoji without decorative imag
   }
   assert.doesNotMatch(chapter + title + manifest, /pdef-ornament-|opener-mark|class="mark"/);
   assert.ok(!Object.keys(zip.files).some(name => name.includes('pdef-ornament-')));
-  assert.match(chapter, /<p class="scene">\* \* \*<\/p>/);
+  assert.match(chapter, /<p class="scene"><svg/);
   assert.equal((chapter.match(/pdef-glyph-1f928\.png/g) || []).length, 2);
   assert.match(chapter, /alt="🤨"/u);
   assert.equal(report.qa.epub.ok, true, JSON.stringify(report.qa.epub.checks));

@@ -47,7 +47,11 @@ test('EPUB stores precompressed media unchanged and still deflates XHTML', async
   const manifest = await zip.file('EPUB/package.opf').async('string');
   assert.doesNotMatch(title, /<img\b/);
   assert.doesNotMatch(chapter + title + manifest, /pdef-ornament-|opener-mark|class="mark"/);
-  assert.match(chapter, /Before scene\.<\/p>\s*<p class="scene">\* \* \*<\/p>\s*<p class="noindent">After scene\./);
+  assert.match(chapter, /Before scene\.<\/p>\s*<p class="scene"><svg[\s\S]+<\/svg><\/p>\s*<p class="noindent">After scene\./);
+  assert.match(title, /<div class="title-ornament"[^>]*><svg/);
+  assert.match(chapter, /<h1 class="chapter-title">[\s\S]*class="chapter-ornament"[\s\S]*<\/h1>/);
+  assert.match(manifest, /id="titlepage"[^>]+properties="svg"/);
+  assert.match(manifest, /id="ch001"[^>]+properties="svg"/);
   assert.match(chapter, /<figure>\s*<img src="\.\.\/images\/img001\.png"/);
   assert.equal(methods.get('EPUB/text/ch001.xhtml'), 8);
   assert.equal(result.size, bytes.length);
