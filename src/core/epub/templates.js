@@ -354,7 +354,6 @@ function attributionXhtml() {
 function ornamentSvg(style, part, height) {
   const draw = part === 'divider' ? svgSceneBreak : svgTitleMark;
   return draw(style.accent, style.genre)
-    .replace(/#[0-9a-f]{6}/gi, 'currentColor')
     .replace(/width="1000" height="\d+"/, `width="100%" height="${height}em"`);
 }
 

@@ -28,12 +28,13 @@ app.whenReady().then(async () => {
     { type: 'para', runs: [{ text: 'Украшение разделяет сцены и остаётся рядом с началом следующего абзаца.' }] },
   ] })];
   let cases = 0;
+  const accent = '#99784d';
   for (const { id: genre } of GENRES) {
     const folder = path.join(scratch, genre);
     await fs.mkdir(path.join(folder, 'text'), { recursive: true });
     await fs.mkdir(path.join(folder, 'css'), { recursive: true });
     const outPath = path.join(folder, 'sample.epub');
-    await buildEpub({ book, style: clampStyle({ genre }), outPath });
+    await buildEpub({ book, style: clampStyle({ genre, accent }), outPath });
     const zip = await JSZip.loadAsync(await fs.readFile(outPath));
     for (const file of ['text/ch001.xhtml', 'text/title.xhtml', 'css/style.css']) {
       await fs.writeFile(path.join(folder, file), await zip.file('EPUB/' + file).async('nodebuffer'));
@@ -49,11 +50,11 @@ app.whenReady().then(async () => {
         const heading = document.querySelector('h1');
         const ornament = heading.querySelector('.chapter-ornament svg');
         const scene = document.querySelector('.scene svg');
-        const paths = [...document.querySelectorAll('svg [stroke="currentColor"]')];
+        const paths = [...document.querySelectorAll('svg [stroke="${accent}"]')];
         return {
           headingOrnament: !!ornament, sceneOrnament: !!scene,
           height: ornament.getBoundingClientRect().height,
-          themeColor: getComputedStyle(document.body).color,
+          accentColor: 'rgb(153, 120, 77)',
           strokes: paths.map(p => getComputedStyle(p).stroke),
           backgrounds: [ornament, scene].map(p => getComputedStyle(p).backgroundColor),
           overflow: document.body.scrollWidth > innerWidth,
@@ -62,7 +63,7 @@ app.whenReady().then(async () => {
       })()`);
       assert.ok(result.headingOrnament && result.sceneOrnament, genre);
       assert.equal(result.height, size * 2.5, genre);
-      assert.ok(result.strokes.length > 0 && result.strokes.every(color => color === result.themeColor), genre);
+      assert.ok(result.strokes.length > 0 && result.strokes.every(color => color === result.accentColor), genre);
       assert.deepEqual(result.backgrounds, ['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)'], genre);
       assert.equal(result.images, 0, genre);
       assert.equal(result.overflow, false, genre);
@@ -82,7 +83,7 @@ app.whenReady().then(async () => {
     assert.equal(paging.headingFragments, 1, genre);
     assert.equal(paging.sceneColumn, paging.nextColumn, genre);
   }
-  console.log(`OK: ${cases} genre/theme/font combinations; transparent vectors, inherited colors, bounded dimensions and pagination.`);
+  console.log(`OK: ${cases} genre/theme/font combinations; transparent vectors, selected accent color, bounded dimensions and pagination.`);
   win.destroy();
   app.exit(0);
 }).catch(error => { console.error(error); app.exit(1); });

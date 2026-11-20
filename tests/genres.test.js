@@ -29,15 +29,15 @@ test('genre presets set note colors and reject unknown genre names', () => {
 test('EPUB preserves genre artwork as inline vectors and plain separators when disabled', () => {
   const chapter = { kind: 'chapter', number: 1, title: 'Chapter name', blocks: [{ type: 'para', runs: [{ text: 'Before the scene.' }] }, { type: 'sep', text: '──✦──' }, { type: 'para', runs: [{ text: 'After the scene.' }] }] };
   for (const { id: genre } of GENRES) for (const signature of [true, false]) {
-    const html = chapterXhtml({ language: 'ru' }, chapter, clampStyle({ genre, signature }), () => '');
+    const html = chapterXhtml({ language: 'ru' }, chapter, clampStyle({ genre, signature, accent: '#99784d' }), () => '');
     assert.doesNotMatch(html, /<img\b|opener-mark/);
     assert.ok(!html.includes(chapter.blocks[1].text));
     assert.match(html, /<span class="chapter-name">Chapter name<\/span>/);
     if (signature) {
       assert.match(html, /<span class="chapter-ornament"[^>]*><svg[^>]+height="2.5em"/);
       assert.match(html, /<p class="scene"><svg[^>]+height="1.8em"/);
-      assert.match(html, /stroke="currentColor"/);
-      assert.doesNotMatch(html, /#[0-9a-f]{6}|<image\b/i);
+      assert.match(html, /stroke="#99784d"/);
+      assert.doesNotMatch(html, /currentColor|<image\b/i);
     } else {
       assert.doesNotMatch(html, /<svg\b/);
       assert.match(html, /Before the scene\.<\/p>\s*<p class="scene">\* \* \*<\/p>\s*<p class="noindent">After the scene\./);
