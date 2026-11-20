@@ -1,7 +1,6 @@
 'use strict';
 
 const { chapterLabel, chapterKicker } = require('../model');
-const { ornamentId, imageHref } = require('./media');
 const { ATTRIBUTION_LINES } = require('../credits');
 
 /** Экранирование текста для XML. */
@@ -152,16 +151,25 @@ p {
 p.noindent, p:first-of-type { text-indent: 0; }
 
 h1.chapter-title {
-  font-size: 1.45em;
-  line-height: 1.22;
-  font-weight: 700;
-  margin: 0 0 0.9em 0;
+  font-size: 1em;
+  font-weight: normal;
+  margin: 0 0 1.3em 0;
   text-align: center;
+  page-break-inside: avoid;
+  break-inside: avoid;
   page-break-after: avoid;
   break-after: avoid;
 }
 
-p.kicker {
+.chapter-name {
+  display: block;
+  font-size: 1.45em;
+  line-height: 1.22;
+  font-weight: 700;
+}
+
+.kicker {
+  display: block;
   font-family: "PT Serif", Georgia, serif;
   font-size: 0.72em;
   letter-spacing: 0.09em;
@@ -171,9 +179,6 @@ p.kicker {
   text-indent: 0;
   text-align: center;
 }
-
-.opener-mark { margin: 1em 0 0.8em; text-indent: 0; text-align: center; }
-.opener-mark img { width: 100%; max-width: 20em; height: auto; }
 
 /* Системные окна, чаты, панели — отдельный структурный элемент. */
 .sysblock {
@@ -201,12 +206,14 @@ p.kicker {
   margin: 1.1em 0;
   text-align: center;
   text-indent: 0;
-  color: ${style.accent};
+  color: inherit;
+  page-break-inside: avoid;
+  break-inside: avoid;
+  page-break-after: avoid;
+  break-after: avoid;
 }
 
-.scene img { width: 100%; max-width: 22em; height: auto; }
-
-.kicker-rule { width: 35%; height: 0; margin: 0.6em auto 1em; border-top: 1px solid ${style.accent}; }
+.kicker-rule { display: block; width: 35%; height: 0; margin: 0.6em auto 1em; border-top: 1px solid ${style.accent}; }
 .sysblock p:first-of-type strong { color: ${style.accent}; }
 
 figure {
@@ -243,8 +250,6 @@ img.pdef-emoji { display: inline; width: auto; height: 1em; margin: 0; vertical-
 /* Титульная страница */
 .titlepage { text-align: center; padding-top: 2.2em; }
 .titlepage h1 { font-size: 1.9em; line-height: 1.2; margin: 0 0 0.6em 0; }
-.titlepage .mark { margin: 0.8em 0 1.1em 0; }
-.titlepage .mark img { width: 90%; max-width: 20em; height: auto; }
 .titlepage .edition {
   font-family: "PT Sans", "Segoe UI", Arial, sans-serif;
   font-weight: 700;
@@ -329,16 +334,9 @@ function attributionXhtml() {
   ].join('\n');
 }
 
-function ornamentImage(part) {
-  const alt = part === 'divider' ? '* * *' : '';
-  return `<img src="../${imageHref(ornamentId(part))}" alt="${alt}"/>`;
-}
-
 function titleXhtml(book, style, counts, text = esc) {
-  const mark = style.signature ? `    <div class="mark">${ornamentImage('opener')}</div>` : '';
   const body = [
     `    <h1>${text(book.title)}</h1>`,
-    mark.trimEnd(),
     `    <p class="edition">${esc(book.subtitle || 'Полное издание')}</p>`,
     `    <p class="counts">${esc(counts.chapters)}</p>`,
     `    <p class="counts">${esc(counts.words)}</p>`,
@@ -364,12 +362,16 @@ function aboutXhtml(book) {
 /** Блоки главы → XHTML. */
 function chapterBody(ch, style, hrefOfAsset, text) {
   const out = [];
-  if (style.signature) out.push(`    <p class="opener-mark">${ornamentImage('opener')}</p>`);
   const kicker = chapterKicker(ch);
-  if (kicker) out.push(`    <p class="kicker">${esc(kicker)}</p>`);
-  if(style.signature && kicker) out.push('    <div class="kicker-rule"></div>');
-  if (ch.title) out.push(`    <h1 class="chapter-title">${text(ch.title)}</h1>`);
-  else if (kicker) out.push(`    <h1 class="chapter-title">${esc(kicker)}</h1>`);
+  const title = ch.title || kicker;
+  if (title) {
+    out.push('    <h1 class="chapter-title">');
+    if (kicker && ch.title) {
+      out.push(`      <span class="kicker">${esc(kicker)}</span>`);
+      if (style.signature) out.push('      <span class="kicker-rule"></span>');
+    }
+    out.push(`      <span class="chapter-name">${text(title)}</span>`, '    </h1>');
+  }
 
   let firstPara = true;
   for (const block of ch.blocks) {
@@ -399,7 +401,7 @@ function chapterBody(ch, style, hrefOfAsset, text) {
         break;
       }
       case 'sep':
-        out.push(`    <p class="scene">${style.signature ? ornamentImage('divider') : '* * *'}</p>`);
+        out.push('    <p class="scene">* * *</p>');
         firstPara = true;
         break;
       case 'image': {

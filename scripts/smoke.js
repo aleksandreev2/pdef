@@ -56,6 +56,8 @@ function registerIpc(win) {
   }
   ipcMain.handle('dialog:pickOutDir', async () => args.out);
   ipcMain.handle('output:getDirectory', async () => null);
+  ipcMain.handle('output:getFormats', async () => null);
+  ipcMain.handle('output:saveFormats', async () => {});
   ipcMain.handle('book:getMetadata', async () => ({}));
   ipcMain.handle('book:saveMetadata', async () => {});
   const updateStatus={currentVersion:require('../package.json').version,enabled:false,status:'disabled',release:null,notify:false,checkedAt:0,message:''};

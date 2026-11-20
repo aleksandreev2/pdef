@@ -56,7 +56,9 @@ function readXhtml(text) {
 }
 
 function expectedChapter(chapter) {
-  const text = [chapter.title || chapterKicker(chapter)];
+  const kicker = chapterKicker(chapter);
+  const title = chapter.title || kicker;
+  const text = [kicker && chapter.title ? `${kicker} ${title}` : title];
   const images = [];
   for (const block of chapter.blocks) {
     if (block.type === 'para' || block.type === 'heading') text.push(runsText(block.runs));

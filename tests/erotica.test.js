@@ -22,10 +22,10 @@ test('erotica is selectable and produces its own visible artwork in every slot',
   }
 });
 
-test('EPUB erotica preserves prose and uses the selected scene divider', () => {
+test('EPUB erotica preserves prose and uses a text scene divider', () => {
   const chapter={kind:'chapter',number:1,title:'Начало',blocks:[{type:'para',runs:[{text:'Текст книги.'}]},{type:'sep'}]};
   const style=clampStyle({genre:'erotica'});
   const html=chapterXhtml({language:'ru'},chapter,style,()=>null);
   assert.ok(html.includes('Текст книги.'));
-  assert.match(html, /<p class="scene"><img src="\.\.\/images\/pdef-ornament-divider\.png" alt="\* \* \*"\/>/);
+  assert.match(html, /<p class="scene">\* \* \*<\/p>/);
 });

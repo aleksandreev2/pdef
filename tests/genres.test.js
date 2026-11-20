@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { clampStyle } = require('../src/core/style');
 const { svgSceneBreak } = require('../src/core/signature');
-const { ornamentPng } = require('../src/core/epub/media');
+const { GENRES } = require('../src/core/genres');
 const { chapterXhtml, navXhtml } = require('../src/core/epub/templates');
 
 const genres = ['fantasy', 'dark-fantasy', 'horror', 'sci-fi', 'litrpg', 'romance', 'historical', 'thriller', 'cultivation', 'regression'];
@@ -26,11 +26,13 @@ test('genre presets set note colors and reject unknown genre names', () => {
   assert.equal(clampStyle({ genre: '<script>' }).genre, 'fantasy');
   assert.equal(clampStyle({ genre: 'romance', accent: '#123456' }).accent, '#123456');
 });
-test('EPUB uses the chosen ornament in place of source separator characters', () => {
-  const chapter = { kind: 'chapter', number: 1, title: 'Начало', blocks: [{ type: 'para', runs: [{ text: 'До перехода.' }] }, { type: 'sep', text: '──────────' }, { type: 'para', runs: [{ text: 'После перехода.' }] }] };
-  const fantasy = chapterXhtml({ language: 'ru' }, chapter, clampStyle({ genre: 'fantasy' }), () => '');
-  assert.ok(!fantasy.includes('──────────'));
-  assert.ok(fantasy.includes('До перехода.') && fantasy.includes('После перехода.'));
-  assert.match(fantasy, /pdef-ornament-divider\.png/);
-  assert.notDeepEqual(ornamentPng(svgSceneBreak('#765432', 'fantasy')), ornamentPng(svgSceneBreak('#765432', 'romance')));
+test('EPUB scene breaks remain text for every genre with ornaments enabled or disabled', () => {
+  const chapter = { kind: 'chapter', number: 1, title: 'Chapter name', blocks: [{ type: 'para', runs: [{ text: 'Before the scene.' }] }, { type: 'sep', text: '──✦──' }, { type: 'para', runs: [{ text: 'After the scene.' }] }] };
+  for (const { id: genre } of GENRES) for (const signature of [true, false]) {
+    const html = chapterXhtml({ language: 'ru' }, chapter, clampStyle({ genre, signature }), () => '');
+    assert.doesNotMatch(html, /<img\b|<svg\b|opener-mark/);
+    assert.ok(!html.includes(chapter.blocks[1].text));
+    assert.match(html, /<span class="chapter-name">Chapter name<\/span>/);
+    assert.match(html, /Before the scene\.<\/p>\s*<p class="scene">\* \* \*<\/p>\s*<p class="noindent">After the scene\./);
+  }
 });

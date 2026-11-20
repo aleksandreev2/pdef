@@ -972,6 +972,25 @@ function switchTab(name) {
 
 /* ───────────────────────────── инициализация ───────────────────────────── */
 
+async function initOutputFormats() {
+  let edited = false;
+  OUTPUT_FORMATS.forEach(key => formatInput(key).addEventListener('change', () => {
+    edited = true;
+    updateOutNameHint();
+    $('buildBtn').disabled = state.busy || !state.chapters.some(c => c.include) || !hasFormat();
+    api.saveOutputFormats(selectedFormats()).catch(error => log(`Не удалось сохранить форматы: ${error.message}`));
+  }));
+  try {
+    const saved = await api.outputFormats();
+    if (!edited) for (const key of OUTPUT_FORMATS) {
+      if (typeof saved?.[key] === 'boolean') formatInput(key).checked = saved[key];
+    }
+    updateOutNameHint();
+  } catch (error) {
+    log(`Не удалось прочитать сохранённые форматы: ${error.message}`);
+  }
+}
+
 async function initBookMetadata() {
   const fields = { subtitle: $('metaSubtitle'), team: $('metaTeam'), teamUrl: $('metaUrl') };
   const edited = new Set();
@@ -992,6 +1011,7 @@ async function initBookMetadata() {
 }
 
 async function init() {
+  await initOutputFormats();
   await initBookMetadata();
   const defaults = await api.styleDefaults();
   initManualLayout(defaults);
@@ -1115,10 +1135,6 @@ async function init() {
   $('onlyProblems').addEventListener('change', renderChapters);
   attachDragReorder($('chapterBody'));
   $('metaTitle').addEventListener('input', updateOutNameHint);
-  OUTPUT_FORMATS.forEach(key=>formatInput(key).addEventListener('change',()=>{
-    updateOutNameHint();
-    $('buildBtn').disabled=state.busy || !state.chapters.some(c=>c.include) || !hasFormat();
-  }));
 
   $('illustrationVersion').addEventListener('change',updateOutNameHint);
   $('fb2Compatibility').addEventListener('change',updateOutNameHint);

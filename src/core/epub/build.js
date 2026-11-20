@@ -8,8 +8,7 @@ const { pipeline } = require('stream/promises');
 const JSZip = require('jszip');
 
 const T = require('./templates');
-const { createEpubGlyphs, ornamentId, imageHref, ornamentPng } = require('./media');
-const { svgTitleMark, svgSceneBreak } = require('../signature');
+const { createEpubGlyphs, imageHref } = require('./media');
 const { chapterLabel } = require('../model');
 const { fmtNumber, plural } = require('../pdf/build');
 
@@ -58,13 +57,6 @@ async function buildEpub({ book, style, fonts, outPath, onProgress = () => {} })
     const href = imageHref(id);
     zip.file(`EPUB/${href}`, data, { compression: 'STORE' });
     items.push({ id, href, type: 'image/png' });
-  }
-
-  if (style.signature) {
-    addPng(ornamentId('opener'), ornamentPng(svgTitleMark(style.accent, style.genre)));
-    if (active.some(ch => ch.blocks.some(block => block.type === 'sep'))) {
-      addPng(ornamentId('divider'), ornamentPng(svgSceneBreak(style.accent, style.genre)));
-    }
   }
 
   /* ── ресурсы: только реально использованные иллюстрации ── */

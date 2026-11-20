@@ -3,6 +3,12 @@ const fs = require('fs/promises');
 const path = require('path');
 const { randomUUID } = require('crypto');
 const METADATA_KEYS = ['subtitle', 'team', 'teamUrl'];
+const DEFAULT_FORMATS = { pdf: true, epub: true, fb2: false, mobi: false, azw3: false, txt: false };
+
+function outputFormats(value) {
+  return Object.fromEntries(Object.entries(DEFAULT_FORMATS).map(([key, fallback]) =>
+    [key, typeof value?.[key] === 'boolean' ? value[key] : fallback]));
+}
 
 function validDirectory(value) {
   return typeof value === 'string' && path.isAbsolute(value) && !value.includes('\0');
@@ -16,7 +22,7 @@ function bookMetadata(value) {
   return metadata;
 }
 
-/** Папка экспорта и сведения о переводе хранятся в профиле приложения. */
+/** Папка, форматы экспорта и сведения о переводе хранятся в профиле приложения. */
 function createOutputPreferences(file) {
   let pending = null;
   async function read() {
@@ -59,6 +65,14 @@ function createOutputPreferences(file) {
     async set(directory) {
       if (!validDirectory(directory)) throw new Error('Выберите папку с абсолютным путём');
       return write(prefs => { prefs.outDir = directory; return directory; });
+    },
+    async getFormats() {
+      await pending;
+      return outputFormats((await read()).formats);
+    },
+    setFormats(value) {
+      const formats = outputFormats(value);
+      return write(prefs => { prefs.formats = formats; });
     },
     async getMetadata() {
       await pending;

@@ -104,6 +104,8 @@ ipcMain.handle('dialog:pickOutDir', async () => {
 });
 
 ipcMain.handle('output:getDirectory', () => outputPreferences.get());
+ipcMain.handle('output:getFormats', () => outputPreferences.getFormats());
+ipcMain.handle('output:saveFormats', (_e, formats) => outputPreferences.setFormats(formats));
 ipcMain.handle('book:getMetadata', () => outputPreferences.getMetadata());
 ipcMain.handle('book:saveMetadata', (_e, edits) => outputPreferences.setMetadata(edits));
 
